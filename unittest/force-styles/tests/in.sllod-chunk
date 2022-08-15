@@ -1,0 +1,27 @@
+variable input_dir index .
+variable data_file index ${input_dir}/data.sllod-chunk
+
+units lj
+timestep 0.001
+atom_style full
+bond_style fene
+pair_style lj/cut/chunk 2.5
+special_bonds fene
+
+read_data ${data_file}
+
+bond_coeff 1 37.0 1.4 1.0 1.0
+pair_coeff 1 1 1.0 1.0 2.5
+mass 1 1.0
+
+velocity	all create 1.0 87287 rot yes
+reset_mol_ids all
+
+fix def all deform 1 xy erate 1.0 remap v
+
+compute molchunk all chunk/atom molecule 
+compute molcom all com/chunk molchunk
+compute molvel all vcm/chunk molchunk
+compute moltemp all temp/chunk molchunk
+
+compute shear_temp all temp/deform/chunk molchunk 
