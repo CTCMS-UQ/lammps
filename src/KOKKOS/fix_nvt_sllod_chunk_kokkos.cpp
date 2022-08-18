@@ -259,8 +259,8 @@ void FixNVTSllodChunk::vcm_thermal_compute() {
   // zero local per-chunk values
 
   Kokkos::parallel_for (nchunk, KOKKOS_LAMBDA (int i)) {
-    this->vcm[i][0] = this->vcm[i][1] = this->vcm[i][2] = 0.0;
-    this->massproc[i] = 0.0;
+    this->vcm(i,0) = this->vcm(i,1) = this->vcm(i,2) = 0.0;
+    this->massproc(i) = 0.0;
   }
 
   // compute COM and VCM for each chunk
@@ -282,9 +282,9 @@ void FixNVTSllodChunk::vcm_thermal_compute() {
       index = ichunk[i]-1;
       if (index < 0) continue;
       if (rmass) {
-        massone = rmass[i];
+        massone = this->rmass(i);
       } else {
-        massone = mass[type[i]];
+        massone = this->mass(this->type(i));
       }
       // Adjust the velocity to reflect the thermal velocity 
       this->vcm(index,0) += v(i,0) * massone;
