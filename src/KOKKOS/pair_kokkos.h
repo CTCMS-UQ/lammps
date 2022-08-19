@@ -669,7 +669,80 @@ struct PairComputeFunctor  {
         }
       }
     }
+
+  if (c.vflag_mol) vmol_tally(i, j, c.nlocal, NEWTON_PAIR, fpair, delx, dely, delz, c.chunk_virial);
+
   }
+
+/* ----------------------------------------------------------------------
+   tally molecular virials into global accumulator
+   have delx, dely, delz and fpair (which gives fx, fy, fz)
+   get delcomx, delcomy, delcomz (chunk centre-of-mass separation)
+   from mols_com
+------------------------------------------------------------------------- */
+
+KOKKOS_INLINE_FUNCTION
+void vmol_tally(const int &i, const int &j, const int &nlocal, 
+  const int &newton_pair, const double &fpair, 
+  const double &delx, const double &dely, const double &delz, 
+  const double *chunk_virial) const
+{
+  double delcom[3], v[9];
+
+  int mol_i = static_cast<int>(c.atom->molecule[i]);
+  int mol_j = static_cast<int>(c.atom->molecule[j]);
+
+  if (c.mols_com != nullptr) {
+    for (int d = 0; d < 3; d++) {
+      delcom[d] = c.mols_com[mol_i][d] - c.mols_com[mol_j][d];
+    }
+  }
+
+  v[0] = delcom[0]*delx*fpair;
+  v[1] = delcom[1]*dely*fpair;
+  v[2] = delcom[2]*delz*fpair;
+  v[3] = delcom[0]*dely*fpair;
+  v[4] = delcom[0]*delz*fpair;
+  v[5] = delcom[1]*delz*fpair;
+  v[6] = delcom[1]*delx*fpair;
+  v[7] = delcom[2]*delx*fpair;
+  v[8] = delcom[2]*dely*fpair;
+
+  if (newton_pair) {
+    chunk_virial[0] += v[0];
+    chunk_virial[1] += v[1];
+    chunk_virial[2] += v[2];
+    chunk_virial[3] += v[3];
+    chunk_virial[4] += v[4];
+    chunk_virial[5] += v[5];
+    chunk_virial[6] += v[6];
+    chunk_virial[7] += v[7];
+    chunk_virial[8] += v[8];
+  } else {
+    if (i < nlocal) {
+      chunk_virial[0] += 0.5*v[0];
+      chunk_virial[1] += 0.5*v[1];
+      chunk_virial[2] += 0.5*v[2];
+      chunk_virial[3] += 0.5*v[3];
+      chunk_virial[4] += 0.5*v[4];
+      chunk_virial[5] += 0.5*v[5];
+      chunk_virial[6] += 0.5*v[6];
+      chunk_virial[7] += 0.5*v[7];
+      chunk_virial[8] += 0.5*v[8];
+    }
+    if (j < nlocal) {
+      chunk_virial[0] += 0.5*v[0];
+      chunk_virial[1] += 0.5*v[1];
+      chunk_virial[2] += 0.5*v[2];
+      chunk_virial[3] += 0.5*v[3];
+      chunk_virial[4] += 0.5*v[4];
+      chunk_virial[5] += 0.5*v[5];
+      chunk_virial[6] += 0.5*v[6];
+      chunk_virial[7] += 0.5*v[7];
+      chunk_virial[8] += 0.5*v[8];
+    }
+  }
+}
 
 
   KOKKOS_INLINE_FUNCTION
