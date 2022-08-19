@@ -120,7 +120,7 @@ struct PairComputeFunctor  {
   template<int EVFLAG, int NEWTON_PAIR>
   KOKKOS_FUNCTION
   EV_FLOAT compute_item(const int& ii,
-                        const NeighListKokkos<device_type> &list, const NoCoulTag&, double* chunk_virial) const {
+                        const NeighListKokkos<device_type> &list, const NoCoulTag&) const {
 
     auto a_f = dup_f.template access<typename AtomicDup<NEIGHFLAG,device_type>::value>();
 
@@ -169,7 +169,7 @@ struct PairComputeFunctor  {
             ev.evdwl += (((NEIGHFLAG==HALF || NEIGHFLAG==HALFTHREAD)&&(NEWTON_PAIR||(j<c.nlocal)))?1.0:0.5)*evdwl;
           }
 
-          if (c.vflag_either || c.eflag_atom) ev_tally(ev,i,j,evdwl,fpair,delx,dely,delz, chunk_virial);
+          if (c.vflag_either || c.eflag_atom) ev_tally(ev,i,j,evdwl,fpair,delx,dely,delz);
         }
       }
 
@@ -187,7 +187,7 @@ struct PairComputeFunctor  {
   template<int EVFLAG, int NEWTON_PAIR>
   KOKKOS_FUNCTION
   EV_FLOAT compute_item(const int& ii,
-                        const NeighListKokkos<device_type> &list, const CoulTag&, double* chunk_virial ) const {
+                        const NeighListKokkos<device_type> &list, const CoulTag& ) const {
 
     auto a_f = dup_f.template access<typename AtomicDup<NEIGHFLAG,device_type>::value>();
 
@@ -250,7 +250,7 @@ struct PairComputeFunctor  {
             }
           }
 
-          if (c.vflag_either || c.eflag_atom) ev_tally(ev,i,j,evdwl+ecoul,fpair,delx,dely,delz, chunk_virial);
+          if (c.vflag_either || c.eflag_atom) ev_tally(ev,i,j,evdwl+ecoul,fpair,delx,dely,delz);
         }
       }
     }
@@ -588,8 +588,7 @@ struct PairComputeFunctor  {
   KOKKOS_INLINE_FUNCTION
     void ev_tally(EV_FLOAT &ev, const int &i, const int &j,
       const F_FLOAT &epair, const F_FLOAT &fpair, const F_FLOAT &delx,
-                  const F_FLOAT &dely, const F_FLOAT &delz, 
-                  double* chunk_virial) const
+                  const F_FLOAT &dely, const F_FLOAT &delz) const
   {
     auto a_eatom = dup_eatom.template access<typename AtomicDup<NEIGHFLAG,device_type>::value>();
     auto a_vatom = dup_vatom.template access<typename AtomicDup<NEIGHFLAG,device_type>::value>();
@@ -671,7 +670,7 @@ struct PairComputeFunctor  {
       }
     }
 
-  if (c.vflag_mol) vmol_tally(i, j, c.nlocal, NEWTON_PAIR, fpair, delx, dely, delz, chunk_virial);
+  if (c.vflag_mol) vmol_tally(i, j, c.nlocal, NEWTON_PAIR, fpair, delx, dely, delz, c.chunk_virial);
 
   }
 
@@ -686,7 +685,7 @@ KOKKOS_INLINE_FUNCTION
 void vmol_tally(const int &i, const int &j, const int &nlocal, 
   const int &newton_pair, const double &fpair, 
   const double &delx, const double &dely, const double &delz, 
-  double *chunk_virial) const
+  const double *chunk_virial) const
 {
   double delcom[3], v[9];
 
@@ -748,16 +747,16 @@ void vmol_tally(const int &i, const int &j, const int &nlocal,
 
   KOKKOS_INLINE_FUNCTION
   void operator()(const int i) const {
-    if (c.newton_pair) compute_item<0,1>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type(), c.chunk_virial);
-    else compute_item<0,0>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type(), c.chunk_virial);
+    if (c.newton_pair) compute_item<0,1>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type());
+    else compute_item<0,0>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type());
   }
 
   KOKKOS_INLINE_FUNCTION
   void operator()(const int i, value_type &energy_virial) const {
     if (c.newton_pair)
-      energy_virial += compute_item<1,1>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type(), c.chunk_virial);
+      energy_virial += compute_item<1,1>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type());
     else
-      energy_virial += compute_item<1,0>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type(), c.chunk_virial);
+      energy_virial += compute_item<1,0>(i,list,typename DoCoul<PairStyle::COUL_FLAG>::type());
   }
 
   KOKKOS_INLINE_FUNCTION
