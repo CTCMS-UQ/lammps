@@ -415,12 +415,15 @@ struct s_EV_FLOAT {
   E_FLOAT evdwl;
   E_FLOAT ecoul;
   E_FLOAT v[6];
+  E_FLOAT vmol[9]; // molecular virial accumulator
   KOKKOS_INLINE_FUNCTION
   s_EV_FLOAT() {
     evdwl = 0;
     ecoul = 0;
     for (int i = 0; i < 6; ++i)
       v[i] = 0;
+    for (int i = 0; i < 9; ++i)
+      vmol[i] = 0;
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -429,6 +432,8 @@ struct s_EV_FLOAT {
     ecoul += rhs.ecoul;
     for (int i = 0; i < 6; ++i)
       v[i] += rhs.v[i];
+    for (int i = 0; i < 9; ++i)
+      vmol[i] += rhs.vmol[i];
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -437,6 +442,8 @@ struct s_EV_FLOAT {
     ecoul += rhs.ecoul;
     for (int i = 0; i < 6; ++i)
       v[i] += rhs.v[i];
+    for (int i = 0; i < 9; ++i)
+      vmol[i] += rhs.vmol[i];
   }
 };
 typedef struct s_EV_FLOAT EV_FLOAT;

@@ -56,7 +56,9 @@ struct PairComputeFunctor  {
   typedef typename PairStyle::device_type device_type ;
   typedef ArrayTypes<device_type> AT;
 
-  // Reduction type, contains evdwl, ecoul and virial[6]
+  // Reduction type, contains evdwl, ecoul and virial[15]
+  // Last 9 components for holding molecular virial
+  // tensor (which is not necessarily symmetric)
   typedef EV_FLOAT value_type;
 
   // The copy of the pair style
@@ -667,6 +669,11 @@ struct PairComputeFunctor  {
           a_vatom(j,4) += 0.5*v4;
           a_vatom(j,5) += 0.5*v5;
         }
+      }
+
+      if (c.vflag_mol) {
+         // get COMs
+         // accumulate into ev.vmol[0-8]
       }
     }
   }
