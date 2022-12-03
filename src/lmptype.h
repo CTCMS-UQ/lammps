@@ -165,6 +165,7 @@ typedef int imageint;
 typedef int tagint;
 typedef int bigint;
 
+
 #define MAXSMALLINT INT_MAX
 #define MAXTAGINT INT_MAX
 #define MAXBIGINT INT_MAX
@@ -229,6 +230,11 @@ union ubuf {
   ubuf(const int64_t &arg) : i(arg) {}
   ubuf(const int &arg) : i(arg) {}
 };
+
+// Bit mask type for Kokkos tally computes
+// std::bitset would be ideal, but needs C++23 to work in constexpr
+typedef unsigned long TALLY_MASK;
+
 }    // namespace LAMMPS_NS
 
 // preprocessor macros for compiler specific settings

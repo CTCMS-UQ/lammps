@@ -93,12 +93,7 @@ class PairLJCutKokkos : public PairLJCut {
   int nlocal,nall,eflag,vflag;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairLJCutKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairLJCutKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairLJCutKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairLJCutKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairLJCutKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairLJCutKokkos,HALFTHREAD,false>;
+  KokkosPair(PairLJCutKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairLJCutKokkos,FULL,void>(PairLJCutKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJCutKokkos,HALF,void>(PairLJCutKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJCutKokkos,HALFTHREAD,void>(PairLJCutKokkos*,NeighListKokkos<DeviceType>*);

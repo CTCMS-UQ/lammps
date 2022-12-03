@@ -92,12 +92,7 @@ class PairBuckKokkos : public PairBuck {
   int nlocal,nall,eflag,vflag;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairBuckKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairBuckKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairBuckKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairBuckKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairBuckKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairBuckKokkos,HALFTHREAD,false>;
+  KokkosPair(PairBuckKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairBuckKokkos,FULL,void>(PairBuckKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairBuckKokkos,HALF,void>(PairBuckKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairBuckKokkos,HALFTHREAD,void>(PairBuckKokkos*,NeighListKokkos<DeviceType>*);

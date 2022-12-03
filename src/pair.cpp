@@ -133,11 +133,11 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
 
 Pair::~Pair()
 {
+  if (copymode) return;
+
   num_tally_compute = 0;
   memory->sfree((void *) list_tally_compute);
   list_tally_compute = nullptr;
-
-  if (copymode) return;
 
   if (elements)
     for (int i = 0; i < nelements; i++) delete[] elements[i];
@@ -751,8 +751,8 @@ void Pair::write_restart(FILE *)
 
 void Pair::add_tally_callback(Compute *ptr)
 {
-  if (lmp->kokkos)
-    error->all(FLERR,"Cannot yet use compute tally with Kokkos");
+  if (lmp->kokkos && !ptr->kokkosable)
+    error->all(FLERR,"Compute with style {} does not support KOKKOS", ptr->style);
 
   int i,found=-1;
 

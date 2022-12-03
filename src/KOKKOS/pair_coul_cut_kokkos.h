@@ -112,12 +112,7 @@ class PairCoulCutKokkos : public PairCoulCut {
   double qqrd2e;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairCoulCutKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairCoulCutKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairCoulCutKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairCoulCutKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairCoulCutKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairCoulCutKokkos,HALFTHREAD,false>;
+  KokkosPair(PairCoulCutKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairCoulCutKokkos,FULL,void>(PairCoulCutKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairCoulCutKokkos,HALF,void>(PairCoulCutKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairCoulCutKokkos,HALFTHREAD,void>(PairCoulCutKokkos*,NeighListKokkos<DeviceType>*);

@@ -98,12 +98,7 @@ class PairLJExpandKokkos : public PairLJExpand {
   int nlocal,nall,eflag,vflag;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairLJExpandKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairLJExpandKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairLJExpandKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairLJExpandKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairLJExpandKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairLJExpandKokkos,HALFTHREAD,false>;
+  KokkosPair(PairLJExpandKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairLJExpandKokkos,FULL,void>(PairLJExpandKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJExpandKokkos,HALF,void>(PairLJExpandKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJExpandKokkos,HALFTHREAD,void>(PairLJExpandKokkos*,NeighListKokkos<DeviceType>*);

@@ -97,12 +97,7 @@ class PairLJClass2Kokkos : public PairLJClass2 {
   int nlocal,nall,eflag,vflag;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairLJClass2Kokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairLJClass2Kokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairLJClass2Kokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairLJClass2Kokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairLJClass2Kokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairLJClass2Kokkos,HALFTHREAD,false>;
+  KokkosPair(PairLJClass2Kokkos);
   friend EV_FLOAT pair_compute_neighlist<PairLJClass2Kokkos,FULL,void>(PairLJClass2Kokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJClass2Kokkos,HALF,void>(PairLJClass2Kokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJClass2Kokkos,HALFTHREAD,void>(PairLJClass2Kokkos*,NeighListKokkos<DeviceType>*);

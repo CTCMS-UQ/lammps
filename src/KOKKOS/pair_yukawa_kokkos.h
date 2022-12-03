@@ -96,12 +96,7 @@ class PairYukawaKokkos : public PairYukawa {
   int nlocal,nall,eflag,vflag;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairYukawaKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairYukawaKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairYukawaKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairYukawaKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairYukawaKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairYukawaKokkos,HALFTHREAD,false>;
+  KokkosPair(PairYukawaKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairYukawaKokkos,FULL,void>(
     PairYukawaKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairYukawaKokkos,HALF,void>(

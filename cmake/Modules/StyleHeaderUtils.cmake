@@ -94,6 +94,10 @@ function(RegisterIntegrateStyle path)
     AddStyleHeader(${path} INTEGRATE)
 endfunction(RegisterIntegrateStyle)
 
+function(RegisterKokkosTallyStyle search_path)
+    FindStyleHeaders(${search_path} KOKKOS_TALLY_CLASS   "compute_*_kokkos"  TALLY_KK)
+endfunction(RegisterKokkosTallyStyle path)
+
 function(RegisterStyles search_path)
     FindStyleHeaders(${search_path} ANGLE_CLASS     angle_     ANGLE     ) # angle     ) # force
     FindStyleHeaders(${search_path} ATOM_CLASS      atom_vec_  ATOM_VEC  ) # atom      ) # atom      atom_vec_hybrid
@@ -142,26 +146,27 @@ endfunction(RegisterStylesExt)
 
 function(GenerateStyleHeaders output_path)
     message(STATUS "Generating style headers...")
-    GenerateStyleHeader(${output_path} ANGLE      angle     ) # force
-    GenerateStyleHeader(${output_path} ATOM_VEC   atom      ) # atom      atom_vec_hybrid
-    GenerateStyleHeader(${output_path} BODY       body      ) # atom_vec_body
-    GenerateStyleHeader(${output_path} BOND       bond      ) # force
-    GenerateStyleHeader(${output_path} COMMAND    command   ) # input
-    GenerateStyleHeader(${output_path} COMPUTE    compute   ) # modify
-    GenerateStyleHeader(${output_path} DIHEDRAL   dihedral  ) # force
-    GenerateStyleHeader(${output_path} DUMP       dump      ) # output    write_dump
-    GenerateStyleHeader(${output_path} FIX        fix       ) # modify
-    GenerateStyleHeader(${output_path} IMPROPER   improper  ) # force
-    GenerateStyleHeader(${output_path} INTEGRATE  integrate ) # update
-    GenerateStyleHeader(${output_path} KSPACE     kspace    ) # force
-    GenerateStyleHeader(${output_path} MINIMIZE   minimize  ) # update
-    GenerateStyleHeader(${output_path} NBIN       nbin      ) # neighbor
-    GenerateStyleHeader(${output_path} NPAIR      npair     ) # neighbor
-    GenerateStyleHeader(${output_path} NSTENCIL   nstencil  ) # neighbor
-    GenerateStyleHeader(${output_path} NTOPO      ntopo     ) # neighbor
-    GenerateStyleHeader(${output_path} PAIR       pair      ) # force
-    GenerateStyleHeader(${output_path} READER     reader    ) # read_dump
-    GenerateStyleHeader(${output_path} REGION     region    ) # domain
+    GenerateStyleHeader(${output_path} ANGLE      angle         ) # force
+    GenerateStyleHeader(${output_path} ATOM_VEC   atom          ) # atom      atom_vec_hybrid
+    GenerateStyleHeader(${output_path} BODY       body          ) # atom_vec_body
+    GenerateStyleHeader(${output_path} BOND       bond          ) # force
+    GenerateStyleHeader(${output_path} COMMAND    command       ) # input
+    GenerateStyleHeader(${output_path} COMPUTE    compute       ) # modify
+    GenerateStyleHeader(${output_path} DIHEDRAL   dihedral      ) # force
+    GenerateStyleHeader(${output_path} DUMP       dump          ) # output    write_dump
+    GenerateStyleHeader(${output_path} FIX        fix           ) # modify
+    GenerateStyleHeader(${output_path} IMPROPER   improper      ) # force
+    GenerateStyleHeader(${output_path} INTEGRATE  integrate     ) # update
+    GenerateStyleHeader(${output_path} KSPACE     kspace        ) # force
+    GenerateStyleHeader(${output_path} MINIMIZE   minimize      ) # update
+    GenerateStyleHeader(${output_path} NBIN       nbin          ) # neighbor
+    GenerateStyleHeader(${output_path} NPAIR      npair         ) # neighbor
+    GenerateStyleHeader(${output_path} NSTENCIL   nstencil      ) # neighbor
+    GenerateStyleHeader(${output_path} NTOPO      ntopo         ) # neighbor
+    GenerateStyleHeader(${output_path} PAIR       pair          ) # force
+    GenerateStyleHeader(${output_path} READER     reader        ) # read_dump
+    GenerateStyleHeader(${output_path} REGION     region        ) # domain
+    GenerateStyleHeader(${output_path} TALLY_KK   tally_kokkos  ) # tally_kokkos
 endfunction(GenerateStyleHeaders)
 
 function(DetectBuildSystemConflict lammps_src_dir)

@@ -93,12 +93,7 @@ class PairMorseKokkos : public PairMorse {
   int nlocal,nall,eflag,vflag;
 
   void allocate() override;
-  friend struct PairComputeFunctor<PairMorseKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairMorseKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairMorseKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairMorseKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairMorseKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairMorseKokkos,HALFTHREAD,false>;
+  KokkosPair(PairMorseKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairMorseKokkos,FULL,void>(PairMorseKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairMorseKokkos,HALF,void>(PairMorseKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairMorseKokkos,HALFTHREAD,void>(PairMorseKokkos*,NeighListKokkos<DeviceType>*);

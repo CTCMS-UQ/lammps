@@ -19,12 +19,15 @@
 #ifndef LMP_PAIR_KOKKOS_H
 #define LMP_PAIR_KOKKOS_H
 
+#include "compute.h"
 #include "Kokkos_Macros.hpp"
 #include "pair.h"               // IWYU pragma: export
 #include "neighbor_kokkos.h"
 #include "neigh_list_kokkos.h"
 #include "Kokkos_Vectorization.hpp"
 #include "Kokkos_ScatterView.hpp"
+
+#include "style_tally_kokkos.h"
 
 namespace LAMMPS_NS {
 
@@ -49,15 +52,235 @@ struct DoCoul<1> {
   typedef CoulTag type;
 };
 
+// Assign unique bit mask to each tally compute style or combination of styles.
+// This will overflow if too many kokkos tally computes, but could be extended
+// to a larger data type if needed.
+// Specialise based on DeviceType so that lookup fails (returns 0) for computes
+// with DeviceType different to pair style.
+template<class DeviceType, class T, class ... Ts>
+struct TallyMaskLookup {
+  template<class U, std::size_t i = 0, std::enable_if_t<std::is_void<U>::value,bool> = true>
+  constexpr static TALLY_MASK get_mask() {
+    return 0;
+  }
+
+  template<class U, std::size_t i = 0, std::enable_if_t<!(sizeof...(Ts) > 0) && !std::is_void<U>::value,bool> = true>
+  constexpr static TALLY_MASK get_mask() {
+    static_assert(8*sizeof(TALLY_MASK) >= i, "Too many kokkos tally computes. Try increasing the size of TALLY_MASK.");
+    if (std::is_same<T,U>::value) return 1 << i;
+    return 0;
+  }
+
+  template<class U, std::size_t i = 0, std::enable_if_t<(sizeof...(Ts) > 0) && !std::is_void<U>::value,bool> = true>
+  constexpr static TALLY_MASK get_mask() {
+    static_assert(8*sizeof(TALLY_MASK) >= i, "Too many kokkos tally computes. Try increasing the size of TALLY_MASK.");
+    if (std::is_same<T,U>::value) return 1 << i;
+    return TallyMaskLookup<DeviceType,Ts...>::template get_mask<U,i+1>();
+  }
+};
+
+template<class DeviceType>
+struct s_TALLY_MASK {
+  // TallyMaskLookup instantiation containing all kokkos tally computes
+  typedef TallyMaskLookup<DeviceType
+#define TallyStyle(Class) ,Class
+#define KOKKOS_TALLY_CLASS
+#include "style_tally_kokkos.h"
+#undef KOKKOS_TALLY_CLASS
+#undef TallyStyle
+    > Lookup;
+
+  template<class T, class ... Ts>
+  static constexpr TALLY_MASK get_tally_mask(std::enable_if_t<(sizeof...(Ts)>0),bool> = true) {
+    return Lookup::template get_mask<T>() | get_tally_mask<Ts...>();
+  }
+  template<class T, class ... Ts>
+  static constexpr TALLY_MASK get_tally_mask(std::enable_if_t<!(sizeof...(Ts)>0),bool> = true) {
+    return Lookup::template get_mask<T>();
+  }
+};
+
+// Wrapper to get handle EV_FLOAT and FEV_FLOAT types in case of TallyStyle = void
+// T should be some instantiation of TallyFunctor
+template<class T> struct fev_wrapper {
+  typedef typename T::ev_value_type ev_value_type;
+  typedef typename T::fev_value_type fev_value_type;
+
+  static KOKKOS_INLINE_FUNCTION
+  void tally_add(ev_value_type &ev, const fev_value_type &fev) {
+    ev.tally += fev.tally;
+  }
+};
+template<> struct fev_wrapper<void> {
+  typedef EV_FLOAT ev_value_type;
+  typedef FEV_FLOAT fev_value_type;
+
+  static KOKKOS_INLINE_FUNCTION
+  void tally_add(ev_value_type &, const fev_value_type &) {}
+};
+
+// Combine multiple tally styles and pass through callbacks.
+// Data can be linked to a particular compute through the init_step function,
+// and the result of the pair reduction is passed back to the relevant
+// compute with the consolidate function.
+// Templated over DeviceType so that lookup fails for computes not on the
+// same device as the pair style.
+template<class DeviceType, class First, class ... Rest>
+struct TallyFunctor {
+  typedef s_EV_FLOAT<First, Rest...> ev_value_type;
+  typedef s_FEV_FLOAT<First, Rest...> fev_value_type;
+
+  typename First::tally_functor first;
+  TallyFunctor<DeviceType, Rest...> rest;
+
+  TallyFunctor() : first(), rest() {}
+
+  inline void init_step(Compute* c_ptr, const TALLY_MASK &mask) {
+    if ((mask & s_TALLY_MASK<DeviceType>::template get_tally_mask<First>()) == mask)
+      first.init_step(static_cast<First*>(c_ptr));
+    else rest.init_step(c_ptr,mask);
+  }
+
+  template<class EVType>
+  inline void consolidate(Compute* c_ptr, const TALLY_MASK &mask, const EVType &ev) {
+    if ((mask & s_TALLY_MASK<DeviceType>::template get_tally_mask<First>()) == mask)
+      first.consolidate(static_cast<First*>(c_ptr), ev.template get<First>());
+    else rest.consolidate(c_ptr,mask,ev);
+  }
+
+  template<int NEIGHFLAG, class EVType>
+  KOKKOS_INLINE_FUNCTION
+  void ev_tally(EVType &tally,
+    const int &i, const int &j, const int &nlocal, const int &newton_pair,
+    const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair,
+    const F_FLOAT &delx, const F_FLOAT &dely, const F_FLOAT &delz) const
+  {
+    first.template ev_tally<NEIGHFLAG>(tally.first,i,j,nlocal,newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
+    rest.template ev_tally<NEIGHFLAG>(tally.rest,i,j,nlocal,newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
+  }
+};
+
+template<class DeviceType, class First>
+struct TallyFunctor<DeviceType, First> {
+  typedef s_EV_FLOAT<First> ev_value_type;
+  typedef s_FEV_FLOAT<First> fev_value_type;
+
+  typename First::tally_functor first;
+
+  TallyFunctor() : first() {}
+
+  inline void init_step(Compute* c_ptr, const TALLY_MASK &mask) {
+    if ((mask & s_TALLY_MASK<DeviceType>::template get_tally_mask<First>()) == mask)
+      first.init_step(static_cast<First*>(c_ptr));
+  }
+
+  template<class EVType>
+  inline void consolidate(Compute* c_ptr, const TALLY_MASK &mask, EVType ev) {
+    if ((mask & s_TALLY_MASK<DeviceType>::template get_tally_mask<First>()) == mask)
+      first.consolidate(static_cast<First*>(c_ptr), ev.template get<First>());
+  }
+
+  template<int NEIGHFLAG, class EVType>
+  KOKKOS_INLINE_FUNCTION
+  void ev_tally(EVType &tally,
+    const int &i, const int &j, const int &nlocal, const int &newton_pair,
+    const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair,
+    const F_FLOAT &delx, const F_FLOAT &dely, const F_FLOAT &delz) const
+  {
+    first.template ev_tally<NEIGHFLAG>(tally.first,i,j,nlocal,newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
+  }
+};
+
+// Specialise for voids to avoid errors. Can maybe remove this if 'void,void>'
+// tail can be removed when building TallyCombinator
+template<class DeviceType, class First>
+struct TallyFunctor<DeviceType,First,void> {
+  typedef s_EV_FLOAT<First,void> ev_value_type;
+  typedef s_FEV_FLOAT<First,void> fev_value_type;
+
+  typename First::tally_functor first;
+
+  TallyFunctor() : first() {}
+
+  inline void init_step(Compute* c_ptr, const TALLY_MASK &mask) {
+    if ((mask & s_TALLY_MASK<DeviceType>::template get_tally_mask<First>()) == mask)
+      first.init_step(static_cast<First*>(c_ptr));
+  }
+
+  template<class EVType>
+  inline void consolidate(Compute* c_ptr, const TALLY_MASK &mask, EVType ev) {
+    if ((mask & s_TALLY_MASK<DeviceType>::template get_tally_mask<First>()) == mask)
+      first.consolidate(static_cast<First*>(c_ptr), ev.template get<First>());
+  }
+
+  template<int NEIGHFLAG, class EVType>
+  KOKKOS_INLINE_FUNCTION
+  void ev_tally(EVType &tally,
+    const int &i, const int &j, const int &nlocal, const int &newton_pair,
+    const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair,
+    const F_FLOAT &delx, const F_FLOAT &dely, const F_FLOAT &delz) const
+  {
+    first.template ev_tally<NEIGHFLAG>(tally.first,i,j,nlocal,newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
+  }
+};
+
+template<class DeviceType>
+struct TallyFunctor<DeviceType,void> {
+  typedef s_EV_FLOAT<void> ev_value_type;
+  typedef s_FEV_FLOAT<void> fev_value_type;
+
+  TallyFunctor() {}
+
+  inline void init_step(Compute* c_ptr, const TALLY_MASK &mask) {}
+
+  template<class EVType>
+  inline void consolidate(Compute* c_ptr, const TALLY_MASK &mask, EVType ev) {}
+
+  template<int NEIGHFLAG, class EVType>
+  KOKKOS_INLINE_FUNCTION
+  void ev_tally(EVType &tally,
+    const int &i, const int &j, const int &nlocal, const int &newton_pair,
+    const double &evdwl, const double &ecoul, const double &fpair,
+    const double &delx, const double &dely, const double &delz) const
+  {
+  }
+};
+
+template<class DeviceType>
+struct TallyFunctor<DeviceType,void,void> {
+  typedef s_EV_FLOAT<void,void> ev_value_type;
+  typedef s_FEV_FLOAT<void,void> fev_value_type;
+
+  TallyFunctor() {}
+
+  inline void init_step(Compute* c_ptr, const TALLY_MASK &mask) {}
+
+  template<class EVType>
+  inline void consolidate(Compute* c_ptr, const TALLY_MASK &mask, EVType ev) {}
+
+  template<int NEIGHFLAG, class EVType>
+  KOKKOS_INLINE_FUNCTION
+  void ev_tally(EVType &tally,
+    const int &i, const int &j, const int &nlocal, const int &newton_pair,
+    const double &evdwl, const double &ecoul, const double &fpair,
+    const double &delx, const double &dely, const double &delz) const
+  {
+  }
+};
+
 
 //Specialisation for Neighborlist types Half, HalfThread, Full
-template <class PairStyle, int NEIGHFLAG, bool STACKPARAMS, class Specialisation = void>
+template <class PairStyle, int NEIGHFLAG, bool STACKPARAMS, class Specialisation = void, class TallyStyle = void>
 struct PairComputeFunctor  {
   typedef typename PairStyle::device_type device_type ;
   typedef ArrayTypes<device_type> AT;
 
-  // Reduction type, contains evdwl, ecoul and virial[6]
-  typedef EV_FLOAT value_type;
+  constexpr static bool TALLYFLAG = !std::is_void<TallyStyle>::value;
+
+  // Reduction type, contains evdwl, ecoul, virial[6], and extra data for TallyStyle
+  typedef typename fev_wrapper<TallyStyle>::ev_value_type ev_value_type;
+  typedef typename fev_wrapper<TallyStyle>::fev_value_type fev_value_type;
+  typedef ev_value_type value_type;
 
   // The copy of the pair style
   PairStyle c;
@@ -86,9 +309,31 @@ struct PairComputeFunctor  {
 
   NeighListKokkos<device_type> list;
 
+  template<class T, std::enable_if_t<!std::is_void<T>::value,bool> = true>
+  constexpr static T wrap_tally_style(T* t_ptr) {return *t_ptr;}
+  template<class T, std::enable_if_t<std::is_void<T>::value,bool> = true>
+  constexpr static T* wrap_tally_style(T* t_ptr) {return nullptr;}
+
+  template<class T, class T_FEV, std::enable_if_t<!std::is_void<T>::value,bool> = true>
+  inline static void wrap_ev_tally(const T &t, T_FEV &ev,
+      const int &i, const int &j, const int& nlocal, const int&newton_pair,
+      const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair,
+      const F_FLOAT &delx, const F_FLOAT &dely, const F_FLOAT &delz)
+  {
+    t.template ev_tally<NEIGHFLAG>(ev.tally,i,j,nlocal,newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
+  }
+  template<class T, class T_FEV, std::enable_if_t<std::is_void<T>::value,bool> = true>
+  inline static void wrap_ev_tally(T* t_ptr, T_FEV&,
+      const int&, const int&, const int&, const int&,
+      const F_FLOAT&, const F_FLOAT&, const F_FLOAT&,
+      const F_FLOAT&, const F_FLOAT&, const F_FLOAT&) {}
+
+  typename std::conditional<TALLYFLAG, TallyStyle, void*>::type t;
+
   PairComputeFunctor(PairStyle* c_ptr,
-                          NeighListKokkos<device_type>* list_ptr):
-  c(*c_ptr),list(*list_ptr) {
+                     NeighListKokkos<device_type>* list_ptr,
+                     TallyStyle *t_ptr = nullptr):
+  c(*c_ptr),list(*list_ptr),t(wrap_tally_style(t_ptr)) {
     // allocate duplicated memory
     f = c.f;
     d_eatom = c.d_eatom;
@@ -119,12 +364,12 @@ struct PairComputeFunctor  {
   // This function is called in parallel
   template<int EVFLAG, int NEWTON_PAIR>
   KOKKOS_FUNCTION
-  EV_FLOAT compute_item(const int& ii,
+  ev_value_type compute_item(const int& ii,
                         const NeighListKokkos<device_type> &list, const NoCoulTag&) const {
 
     auto a_f = dup_f.template access<typename AtomicDup<NEIGHFLAG,device_type>::value>();
 
-    EV_FLOAT ev;
+    ev_value_type ev;
     const int i = list.d_ilist[ii];
     const X_FLOAT xtmp = c.x(i,0);
     const X_FLOAT ytmp = c.x(i,1);
@@ -162,7 +407,7 @@ struct PairComputeFunctor  {
           a_f(j,2) -= delz*fpair;
         }
 
-        if (EVFLAG) {
+        if (EVFLAG || TALLYFLAG) {
           F_FLOAT evdwl = 0.0;
           if (c.eflag) {
             evdwl = factor_lj * c.template compute_evdwl<STACKPARAMS,Specialisation>(rsq,i,j,itype,jtype);
@@ -170,6 +415,7 @@ struct PairComputeFunctor  {
           }
 
           if (c.vflag_either || c.eflag_atom) ev_tally(ev,i,j,evdwl,fpair,delx,dely,delz);
+          if (TALLYFLAG) wrap_ev_tally(t,ev,i,j,c.nlocal,NEWTON_PAIR,evdwl,0.0,fpair,delx,dely,delz);
         }
       }
 
@@ -186,12 +432,12 @@ struct PairComputeFunctor  {
   // This function is called in parallel
   template<int EVFLAG, int NEWTON_PAIR>
   KOKKOS_FUNCTION
-  EV_FLOAT compute_item(const int& ii,
+  ev_value_type compute_item(const int& ii,
                         const NeighListKokkos<device_type> &list, const CoulTag& ) const {
 
     auto a_f = dup_f.template access<typename AtomicDup<NEIGHFLAG,device_type>::value>();
 
-    EV_FLOAT ev;
+    ev_value_type ev;
     const int i = list.d_ilist[ii];
     const X_FLOAT xtmp = c.x(i,0);
     const X_FLOAT ytmp = c.x(i,1);
@@ -251,6 +497,7 @@ struct PairComputeFunctor  {
           }
 
           if (c.vflag_either || c.eflag_atom) ev_tally(ev,i,j,evdwl+ecoul,fpair,delx,dely,delz);
+          if (TALLYFLAG) wrap_ev_tally(t,ev,i,j,c.nlocal,NEWTON_PAIR,evdwl,ecoul,fpair,delx,dely,delz);
         }
       }
     }
@@ -383,10 +630,10 @@ struct PairComputeFunctor  {
   // Loop over neighbors of one atom without coulomb interaction
   // This function is called in parallel
   KOKKOS_FUNCTION
-  EV_FLOAT compute_item_team_ev(typename Kokkos::TeamPolicy<device_type>::member_type team,
+  ev_value_type compute_item_team_ev(typename Kokkos::TeamPolicy<device_type>::member_type team,
                                 const NeighListKokkos<device_type> &list, const NoCoulTag&) const {
 
-    EV_FLOAT ev;
+    ev_value_type ev;
 
     const int inum = team.league_size();
     const int atoms_per_team = team.team_size();
@@ -403,10 +650,10 @@ struct PairComputeFunctor  {
       const AtomNeighborsConst neighbors_i = list.get_neighbors_const(i);
       const int jnum = list.d_numneigh[i];
 
-      FEV_FLOAT fev;
+      fev_value_type fev;
 
       Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(team,jnum),
-        [&] (const int jj, FEV_FLOAT& fev_tmp) {
+        [&] (const int jj, fev_value_type& fev_tmp) {
 
         int j = neighbors_i(jj);
         const F_FLOAT factor_lj = c.special_lj[sbmask(j)];
@@ -438,6 +685,7 @@ struct PairComputeFunctor  {
             fev_tmp.v[4] += 0.5*delx*delz*fpair;
             fev_tmp.v[5] += 0.5*dely*delz*fpair;
           }
+          if (TALLYFLAG) wrap_ev_tally(t,fev_tmp,i,j,c.nlocal,c.newton_pair,evdwl,0.0,fpair,delx,dely,delz);
         }
       },fev);
 
@@ -469,6 +717,7 @@ struct PairComputeFunctor  {
           d_vatom(i,4) += fev.v[4];
           d_vatom(i,5) += fev.v[5];
         }
+        fev_wrapper<TallyStyle>::tally_add(ev,fev);
       });
     });
     return ev;
@@ -478,10 +727,10 @@ struct PairComputeFunctor  {
   // Loop over neighbors of one atom with coulomb interaction
   // This function is called in parallel
   KOKKOS_FUNCTION
-  EV_FLOAT compute_item_team_ev(typename Kokkos::TeamPolicy<device_type>::member_type team,
+  ev_value_type compute_item_team_ev(typename Kokkos::TeamPolicy<device_type>::member_type team,
                                 const NeighListKokkos<device_type> &list, const CoulTag& ) const {
 
-    EV_FLOAT ev;
+    ev_value_type ev;
 
     const int inum = team.league_size();
     const int atoms_per_team = team.team_size();
@@ -499,10 +748,10 @@ struct PairComputeFunctor  {
       const AtomNeighborsConst neighbors_i = list.get_neighbors_const(i);
       const int jnum = list.d_numneigh[i];
 
-      FEV_FLOAT fev;
+      fev_value_type fev;
 
       Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(team,jnum),
-        [&] (const int jj, FEV_FLOAT& fev_tmp) {
+        [&] (const int jj, fev_value_type& fev_tmp) {
 
         int j = neighbors_i(jj);
         const F_FLOAT factor_lj = c.special_lj[sbmask(j)];
@@ -547,6 +796,7 @@ struct PairComputeFunctor  {
             fev_tmp.v[4] += 0.5*delx*delz*fpair;
             fev_tmp.v[5] += 0.5*dely*delz*fpair;
           }
+          if (TALLYFLAG) wrap_ev_tally(t,fev_tmp,i,j,c.nlocal,c.newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
         }
       },fev);
 
@@ -580,13 +830,14 @@ struct PairComputeFunctor  {
           d_vatom(i,4) += fev.v[4];
           d_vatom(i,5) += fev.v[5];
         }
+        fev_wrapper<TallyStyle>::tally_add(ev,fev);
       });
     });
     return ev;
   }
 
   KOKKOS_INLINE_FUNCTION
-    void ev_tally(EV_FLOAT &ev, const int &i, const int &j,
+    void ev_tally(ev_value_type &ev, const int &i, const int &j,
       const F_FLOAT &epair, const F_FLOAT &fpair, const F_FLOAT &delx,
                   const F_FLOAT &dely, const F_FLOAT &delz) const
   {
@@ -737,43 +988,16 @@ int GetTeamSize(FunctorStyle& KOKKOS_GPU_ARG(functor), int KOKKOS_GPU_ARG(inum),
 // Submit ParallelFor for NEIGHFLAG=HALF,HALFTHREAD,FULL
 template<class PairStyle, unsigned NEIGHFLAG, class Specialisation>
 EV_FLOAT pair_compute_neighlist (PairStyle* fpair, typename std::enable_if<(NEIGHFLAG&PairStyle::EnabledNeighFlags) != 0, NeighListKokkos<typename PairStyle::device_type>*>::type list) {
-  EV_FLOAT ev;
 
   if (!fpair->lmp->kokkos->neigh_thread_set)
     if (list->inum <= 16384 && NEIGHFLAG == FULL)
       fpair->lmp->kokkos->neigh_thread = 1;
 
-  if (fpair->lmp->kokkos->neigh_thread) {
-    int vector_length = 8;
-    int atoms_per_team = 32;
-
-    if (fpair->atom->ntypes > MAX_TYPES_STACKPARAMS) {
-      PairComputeFunctor<PairStyle,NEIGHFLAG,false,Specialisation > ff(fpair,list);
-      atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
-      Kokkos::TeamPolicy<typename PairStyle::device_type,Kokkos::IndexType<int> > policy(list->inum,atoms_per_team,vector_length);
-      if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(policy,ff,ev);
-      else                              Kokkos::parallel_for(policy,ff);
-    } else {
-      PairComputeFunctor<PairStyle,NEIGHFLAG,true,Specialisation > ff(fpair,list);
-      atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
-      Kokkos::TeamPolicy<typename PairStyle::device_type,Kokkos::IndexType<int> > policy(list->inum,atoms_per_team,vector_length);
-      if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(policy,ff,ev);
-      else                              Kokkos::parallel_for(policy,ff);
-    }
-  } else {
-    if (fpair->atom->ntypes > MAX_TYPES_STACKPARAMS) {
-      PairComputeFunctor<PairStyle,NEIGHFLAG,false,Specialisation > ff(fpair,list);
-      if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(list->inum,ff,ev);
-      else                              Kokkos::parallel_for(list->inum,ff);
-      ff.contribute();
-    } else {
-      PairComputeFunctor<PairStyle,NEIGHFLAG,true,Specialisation > ff(fpair,list);
-      if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(list->inum,ff,ev);
-      else                              Kokkos::parallel_for(list->inum,ff);
-      ff.contribute();
-    }
-  }
-  return ev;
+  if (fpair->atom->ntypes > MAX_TYPES_STACKPARAMS)
+    return PairStyle::template pair_compute_functor<NEIGHFLAG,false,Specialisation>
+      ::functor_type::pair_compute_neighlist(fpair,list);
+  return PairStyle::template pair_compute_functor<NEIGHFLAG,true,Specialisation>
+    ::functor_type::pair_compute_neighlist(fpair,list);
 }
 
 template<class PairStyle, class Specialisation>
@@ -836,7 +1060,222 @@ void pair_virial_fdotr_compute(PairStyle* fpair) {
 }
 
 
+// Pair styles should mark DeclPairComputeFunctor as a typedef for pair_compute_functor
+// Do this with a macro (defined later) to also handle other required friend definitions
+template<class PairStyle, int NEIGHFLAG, bool STACKPARAMS, class Specialisation>
+struct DeclPairComputeFunctorImpl;
 
+
+// Wrap functions inside struct to make friend declaration possible in pair styles
+struct kokkos_tally {
+  // Called when at least one tally compute this timestep
+  template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class TallyCombo>
+  inline static EV_FLOAT pair_compute_neighlist_tally(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list)
+  {
+    typename TallyCombo::tally_computes::ev_value_type ev;
+    typename TallyCombo::tally_computes tally_compute_pack{};
+    TALLY_MASK masks[fpair->num_tally_compute];
+    for (int i = 0; i < fpair->num_tally_compute; ++i) {
+      // Call pair_setup_callback first so compute can decide if it's needed this step.
+      // Can return 0 as mask to skip the step.
+      fpair->list_tally_compute[i]->pair_setup_callback(fpair->eflag, fpair->vflag);
+      masks[i] = fpair->list_tally_compute[i]->tally_mask();
+      if (masks[i]) tally_compute_pack.init_step(fpair->list_tally_compute[i], masks[i]);
+    }
+    typename TallyCombo::pair_compute_functor ff{fpair,list,&tally_compute_pack};
+    if (fpair->lmp->kokkos->neigh_thread) {
+      int vector_length = 8;
+      int atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
+      Kokkos::TeamPolicy<typename PairStyle::device_type,Kokkos::IndexType<int> > policy(list->inum,atoms_per_team,vector_length);
+      Kokkos::parallel_reduce(policy,ff,ev);
+    } else {
+      Kokkos::parallel_reduce(list->inum,ff,ev);
+      ff.contribute();
+    }
+    for (int i = 0; i < fpair->num_tally_compute; ++i)
+      if (masks[i]) tally_compute_pack.consolidate(fpair->list_tally_compute[i], masks[i], ev);
+    return EV_FLOAT(std::move(ev));
+  }
+
+  // Called when no tally computes this timestep
+  template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation>
+  inline static EV_FLOAT pair_compute_neighlist(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list)
+  {
+    EV_FLOAT ev;
+    PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation> ff{fpair,list};
+    if (fpair->lmp->kokkos->neigh_thread) {
+      int vector_length = 8;
+      int atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
+      Kokkos::TeamPolicy<typename PairStyle::device_type,Kokkos::IndexType<int> > policy(list->inum,atoms_per_team,vector_length);
+      if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(policy,ff,ev);
+      else                              Kokkos::parallel_for(policy,ff);
+    } else {
+      if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(list->inum,ff,ev);
+      else                              Kokkos::parallel_for(list->inum,ff);
+      ff.contribute();
+    }
+    return ev;
+  }
+};
+
+// Recursive lookup table for all combinations of tally computes.
+// Limitation of 1 instance at runtime per compute type on a given timestep.
+// Maybe possible to relax this for specific computes with a clever associated tally functor
+template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T, class U, class ... Ts>
+struct TallyCombinator {
+  typedef struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,void> OnlyT;
+  typedef struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,U> TU;
+  typedef struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,Ts...> TTs;
+  typedef struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,U,Ts...> UTs;
+
+  typedef TallyFunctor<typename PairStyle::device_type,T,U,Ts...> tally_computes;
+  typedef struct PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,tally_computes> pair_compute_functor;
+  static constexpr TALLY_MASK bitmask = s_TALLY_MASK<typename PairStyle::device_type>::template get_tally_mask<T,U,Ts...>();
+
+  inline static EV_FLOAT pair_compute_neighlist(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list)
+  {
+    // Build mask for tally computes this timestep
+    TALLY_MASK mask = 0;
+    for (int i = 0; i < fpair->num_tally_compute; ++i)
+      mask |= fpair->list_tally_compute[i]->tally_mask();
+    // If none, call the non-tally pair functor, otherwise look up the correct tally pair functor
+    if (mask) return pair_compute_neighlist_impl(fpair,list,mask);
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+
+  // Never called with mask == 0
+  inline static EV_FLOAT pair_compute_neighlist_impl(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list,
+      const TALLY_MASK &mask)
+  {
+    // If I match the mask, call my pair_compute_neighlist implementation.
+    if (mask == bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TallyCombinator>(fpair,list);
+    if ((mask & OnlyT::bitmask) == mask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,OnlyT>(fpair,list);
+    if ((mask & TU::bitmask) == mask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TU>(fpair,list);
+    if ((mask & TTs::bitmask) == mask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TTs>(fpair,list);
+    if ((mask & UTs::bitmask) == mask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,UTs>(fpair,list);
+
+    // If no exact match, find a combinator that does match and look up pair functor through it.
+    if (mask & TTs::bitmask) return TTs::pair_compute_neighlist_impl(fpair,list,mask);
+    if (mask & UTs::bitmask) return UTs::pair_compute_neighlist_impl(fpair,list,mask);
+
+    // Fall back to non-tally functor if no match can be found (should never happen)
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+};
+
+template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T, class U>
+struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,U> {
+  typedef struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,void> OnlyT;
+  typedef struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,U> TU;
+
+  typedef TallyFunctor<typename PairStyle::device_type,T,U> tally_computes;
+  typedef struct PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,tally_computes> pair_compute_functor;
+  static constexpr TALLY_MASK bitmask = s_TALLY_MASK<typename PairStyle::device_type>::template get_tally_mask<T,U>();
+
+  inline static EV_FLOAT pair_compute_neighlist(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list)
+  {
+    TALLY_MASK mask = 0;
+    for (int i = 0; i < fpair->num_tally_compute; ++i)
+      mask |= fpair->list_tally_compute[i]->tally_mask();
+    if (mask) return pair_compute_neighlist_impl(fpair,list,mask);
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+
+  // Never called with mask == 0
+  inline static EV_FLOAT pair_compute_neighlist_impl(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list,
+      const TALLY_MASK &mask)
+  {
+    // Get exact match or fall back to no tally
+    if (mask == bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TallyCombinator>(fpair,list);
+    if ((mask & OnlyT::bitmask) == mask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,OnlyT>(fpair,list);
+    if ((mask & TU::bitmask) == mask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TU>(fpair,list);
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+};
+
+// Specialise for voids to avoid compile error.
+// Can maybe remove if 'void,void>' tail can be avoided.
+template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T>
+struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,void> {
+
+  typedef TallyFunctor<typename PairStyle::device_type,T,void> tally_computes;
+  typedef struct PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,tally_computes> pair_compute_functor;
+  static constexpr TALLY_MASK bitmask = s_TALLY_MASK<typename PairStyle::device_type>::template get_tally_mask<T>();
+
+  inline static EV_FLOAT pair_compute_neighlist(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list)
+  {
+    TALLY_MASK mask = 0;
+    for (int i = 0; i < fpair->num_tally_compute; ++i)
+      mask |= fpair->list_tally_compute[i]->tally_mask();
+    if (mask == bitmask) return pair_compute_neighlist_impl(fpair,list,mask);
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+
+  inline static EV_FLOAT pair_compute_neighlist_impl(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list,
+      const TALLY_MASK &mask)
+  {
+    // If I match the mask, call my pair_compute_neighlist implementation.
+    // If not, something went wrong so just call the non-tally functor
+    if (mask == bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TallyCombinator>(fpair,list);
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+};
+
+template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation>
+struct TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,void,void> {
+  typedef TallyFunctor<typename PairStyle::device_type,void,void> tally_computes;
+  typedef struct PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,tally_computes> pair_compute_functor;
+  static constexpr TALLY_MASK bitmask = 0;
+
+  inline static EV_FLOAT pair_compute_neighlist(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list)
+  {
+    return pair_compute_neighlist_impl(fpair,list,bitmask);
+  }
+
+  inline static EV_FLOAT pair_compute_neighlist_impl(
+      PairStyle* fpair,
+      NeighListKokkos<typename PairStyle::device_type>* list,
+      const TALLY_MASK &mask)
+  {
+    return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
+  }
+};
+
+// Create recursive TallyCombinator type with all possible PairComputeFunctor types.
+// This acts as a lookup table by storing (at compile time) the bit mask
+// associated with each combination of tally computes.
+template<class PairStyle, int NEIGHFLAG, bool STACKPARAMS, class Specialisation=void>
+struct DeclPairComputeFunctor {
+  typedef typename PairStyle::device_type DeviceType;
+  typedef TallyCombinator<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,
+#define KOKKOS_TALLY_CLASS
+#define TallyStyle(Class) Class,
+#include "style_tally_kokkos.h"
+#undef KOKKOS_TALLY_CLASS
+#undef TallyStyle
+  void,void> functor_type;
+
+  // Finish with two voids to make sure template is always satisfied even if no tally computes exist.
+  // Could maybe reduce duplication elsewhere if this requirement can be removed.
+};
 
 }
 

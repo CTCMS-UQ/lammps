@@ -115,23 +115,12 @@ class PairLJGromacsCoulGromacsKokkos : public PairLJGromacsCoulGromacs {
 
   void allocate() override;
 
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,FULL,true,CoulLongTable<1> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALF,true,CoulLongTable<1> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALFTHREAD,true,CoulLongTable<1> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,FULL,false,CoulLongTable<1> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALF,false,CoulLongTable<1> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALFTHREAD,false,CoulLongTable<1> >;
+  KokkosPair(PairLJGromacsCoulGromacsKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairLJGromacsCoulGromacsKokkos,FULL,CoulLongTable<1> >(PairLJGromacsCoulGromacsKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJGromacsCoulGromacsKokkos,HALF,CoulLongTable<1> >(PairLJGromacsCoulGromacsKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJGromacsCoulGromacsKokkos,HALFTHREAD,CoulLongTable<1> >(PairLJGromacsCoulGromacsKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute<PairLJGromacsCoulGromacsKokkos,CoulLongTable<1> >(PairLJGromacsCoulGromacsKokkos*,
                                                             NeighListKokkos<DeviceType>*);
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,FULL,true,CoulLongTable<0> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALF,true,CoulLongTable<0> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALFTHREAD,true,CoulLongTable<0> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,FULL,false,CoulLongTable<0> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALF,false,CoulLongTable<0> >;
-  friend struct PairComputeFunctor<PairLJGromacsCoulGromacsKokkos,HALFTHREAD,false,CoulLongTable<0> >;
   friend EV_FLOAT pair_compute_neighlist<PairLJGromacsCoulGromacsKokkos,FULL,CoulLongTable<0> >(PairLJGromacsCoulGromacsKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJGromacsCoulGromacsKokkos,HALF,CoulLongTable<0> >(PairLJGromacsCoulGromacsKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairLJGromacsCoulGromacsKokkos,HALFTHREAD,CoulLongTable<0> >(PairLJGromacsCoulGromacsKokkos*,NeighListKokkos<DeviceType>*);

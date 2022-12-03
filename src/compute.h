@@ -157,6 +157,8 @@ class Compute : protected Pointers {
   {
   }
 
+  virtual TALLY_MASK tally_mask() {return 0;}
+
  protected:
   int instance_me;    // which Compute class instantiation I am
 

@@ -89,12 +89,7 @@ class PairZBLKokkos : public PairZBL {
 
   void allocate() override;
 
-  friend struct PairComputeFunctor<PairZBLKokkos,FULL,true>;
-  friend struct PairComputeFunctor<PairZBLKokkos,HALF,true>;
-  friend struct PairComputeFunctor<PairZBLKokkos,HALFTHREAD,true>;
-  friend struct PairComputeFunctor<PairZBLKokkos,FULL,false>;
-  friend struct PairComputeFunctor<PairZBLKokkos,HALF,false>;
-  friend struct PairComputeFunctor<PairZBLKokkos,HALFTHREAD,false>;
+  KokkosPair(PairZBLKokkos);
   friend EV_FLOAT pair_compute_neighlist<PairZBLKokkos,FULL,void>(PairZBLKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairZBLKokkos,HALF,void>(PairZBLKokkos*,NeighListKokkos<DeviceType>*);
   friend EV_FLOAT pair_compute_neighlist<PairZBLKokkos,HALFTHREAD,void>(PairZBLKokkos*,NeighListKokkos<DeviceType>*);
