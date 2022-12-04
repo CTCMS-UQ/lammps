@@ -95,7 +95,9 @@ function(RegisterIntegrateStyle path)
 endfunction(RegisterIntegrateStyle)
 
 function(RegisterKokkosTallyStyle search_path)
-    FindStyleHeaders(${search_path} KOKKOS_TALLY_CLASS   "compute_*_kokkos"  TALLY_KK)
+    if(${PKG_TALLY})
+        FindStyleHeaders(${search_path} KOKKOS_TALLY_CLASS   "compute_*_kokkos"  TALLY_KK)
+    endif()
 endfunction(RegisterKokkosTallyStyle path)
 
 function(RegisterStyles search_path)
