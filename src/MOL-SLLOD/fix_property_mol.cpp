@@ -331,8 +331,34 @@ void FixPropertyMol::com_compute()
     }
   }
 
-  MPI_Allreduce(&comproc[0][0], &com[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
-  if (recalc_mass) MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
+  if (use_mpiallreduce) {
+    MPI_Allreduce(&comproc[0][0], &com[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
+  } else {
+    if (dynamic_mols || dynamic_group) pre_neighbor();
+    memset(com, 0, 3 * molmax * sizeof(double));
+    for (int d = 0; d < 3; d++) {
+      for (auto m : local_mols) com[m][d] = comproc[m][d];
+      int b = 0;
+      for (auto m : send_mols) buffer[buffer_mylo + b++] = com[m][d];
+      MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+                     MPI_DOUBLE, world);
+      for (auto lookup : buffer_ghost_lookup) com[lookup.second][d] += buffer[lookup.first];
+    }
+  }
+  if (recalc_mass) {
+    if (use_mpiallreduce) {
+      MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
+    } else {
+      if (dynamic_mols || dynamic_group) pre_neighbor();
+      memset(mass, 0, molmax * sizeof(double));
+      for (auto m : local_mols) mass[m] = massproc[m];
+      int b = 0;
+      for (auto m : send_mols) buffer[buffer_mylo + b++] = mass[m];
+      MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+                     MPI_DOUBLE, world);
+      for (auto lookup : buffer_ghost_lookup) mass[lookup.second] += buffer[lookup.first];
+    }
+  }
 
   for (int m = 0; m < molmax; ++m) {
     // Some molecule ids could be skipped (not assigned atoms)
