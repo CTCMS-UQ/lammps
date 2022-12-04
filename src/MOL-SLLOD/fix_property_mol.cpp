@@ -14,6 +14,7 @@
 #include "fix_property_mol.h"
 
 #include "atom.h"
+#include "comm.h"
 #include "domain.h"
 #include "error.h"
 #include "group.h"
@@ -25,12 +26,10 @@
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
-
 /* ---------------------------------------------------------------------- */
 
 FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), mass(nullptr), com(nullptr), massproc(nullptr),
-    comproc(nullptr)
+    Fix(lmp, narg, arg), mass(nullptr), com(nullptr), massproc(nullptr), comproc(nullptr)
 {
   if (narg < 3) error->all(FLERR, "Illegal fix property/atom command");
 
@@ -52,11 +51,13 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
       iarg++;
     } else if (strcmp(arg[iarg], "dynamic") == 0) {
       if (++iarg >= narg)
-        error->all(FLERR, "Illegal fix property/mol command. "
-            "Expected value after 'dynamic' keyword");
+        error->all(FLERR,
+                   "Illegal fix property/mol command. "
+                   "Expected value after 'dynamic' keyword");
       dynamic_mols = utils::logical(FLERR, arg[iarg], false, lmp);
       iarg++;
-    } else error->all(FLERR, "Illegal fix property/mol command");
+    } else
+      error->all(FLERR, "Illegal fix property/mol command");
   }
 
   nmax = 0;
@@ -66,10 +67,15 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
   com_step = -1;
   mass_step = -1;
   count_step = -1;
+  preneigh_step = -1;
 
   array_flag = 1;
   size_array_cols = 4;
   size_array_rows_variable = 1;
+
+  recvcounts = new int[comm->nprocs];
+  displs = new int[comm->nprocs];
+  use_mpiallreduce = false;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -77,6 +83,8 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
 FixPropertyMol::~FixPropertyMol()
 {
   for (auto &item : permolecule) mem_destroy(item);
+  delete[] recvcounts;
+  delete[] displs;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -86,10 +94,12 @@ int FixPropertyMol::setmask()
   int mask = 0;
   mask |= PRE_FORCE;
   mask |= PRE_FORCE_RESPA;
+  mask |= PRE_NEIGHBOR;
   return mask;
 }
 
-void FixPropertyMol::request_com() {
+void FixPropertyMol::request_com()
+{
   if (com_flag) return;
   com_flag = 1;
   request_mass();
@@ -97,7 +107,8 @@ void FixPropertyMol::request_com() {
   register_permolecule("property/mol:comproc", &comproc, Atom::DOUBLE, 3);
 }
 
-void FixPropertyMol::request_mass() {
+void FixPropertyMol::request_mass()
+{
   if (mass_flag) return;
   mass_flag = 1;
   register_permolecule("property/mol:mass", &mass, Atom::DOUBLE, 0);
@@ -114,8 +125,8 @@ void FixPropertyMol::request_mass() {
    destroy_permolecule(&arr);
 ---------------------------------------------------------------------- */
 
-void FixPropertyMol::register_permolecule(std::string name, void *address,
-    int datatype, int cols) {
+void FixPropertyMol::register_permolecule(std::string name, void *address, int datatype, int cols)
+{
   if (address == nullptr) return;
 
   for (auto &item : permolecule) {
@@ -136,13 +147,15 @@ void FixPropertyMol::register_permolecule(std::string name, void *address,
    register_permolecule("arr", &arr, Atom::DOUBLE, 0);
    destroy_permolecule(&arr);
 ---------------------------------------------------------------------- */
-void FixPropertyMol::destroy_permolecule(void *address) {
+void FixPropertyMol::destroy_permolecule(void *address)
+{
   auto item = permolecule.begin();
   while (item != permolecule.end()) {
     if (item->address == address) {
       mem_destroy(*item);
       item = permolecule.erase(item);
-    } else ++item;
+    } else
+      ++item;
   }
 }
 
@@ -154,15 +167,15 @@ void FixPropertyMol::init()
   // Check here since atom_style could change before run.
 
   if (!atom->molecule_flag)
-    error->all(FLERR,
-        "Fix property/mol when atom_style does not define a molecule attribute");
+    error->all(FLERR, "Fix property/mol when atom_style does not define a molecule attribute");
 }
 
 /* ----------------------------------------------------------------------
    Need to calculate mass and CoM before main setup() calls since those
    could rely on the memory being allocated (e.g. for virial tallying)
 ---------------------------------------------------------------------- */
-void FixPropertyMol::setup_pre_force(int /*vflag*/) {
+void FixPropertyMol::setup_pre_force(int /*vflag*/)
+{
   dynamic_group = group->dynamic[igroup];
   grow_permolecule();
 
@@ -173,10 +186,10 @@ void FixPropertyMol::setup_pre_force(int /*vflag*/) {
   if (mass_flag) count_molecules();
 }
 
-void FixPropertyMol::setup_pre_force_respa(int vflag, int ilevel) {
+void FixPropertyMol::setup_pre_force_respa(int vflag, int ilevel)
+{
   if (ilevel == 0) setup_pre_force(vflag);
 }
-
 
 /* ----------------------------------------------------------------------
    Calculate number of molecules and grow permolecule arrays if needed.
@@ -185,7 +198,8 @@ void FixPropertyMol::setup_pre_force_respa(int vflag, int ilevel) {
    Returns true if the number of molecules (max. mol id) changed.
 ------------------------------------------------------------------------- */
 
-bool FixPropertyMol::grow_permolecule(int grow_by) {
+bool FixPropertyMol::grow_permolecule(int grow_by)
+{
   // Calculate maximum molecule id
   tagint *molecule = atom->molecule;
   int nlocal = atom->nlocal;
@@ -194,8 +208,7 @@ bool FixPropertyMol::grow_permolecule(int grow_by) {
     if (molecule[i] > maxone) maxone = molecule[i];
   tagint maxall;
   MPI_Allreduce(&maxone, &maxall, 1, MPI_LMP_TAGINT, MPI_MAX, world);
-  if (maxall > MAXSMALLINT)
-    error->all(FLERR, "Molecule IDs too large for fix property/mol");
+  if (maxall > MAXSMALLINT) error->all(FLERR, "Molecule IDs too large for fix property/mol");
 
   tagint old_molmax = molmax;
   tagint new_size = molmax + grow_by;
@@ -212,13 +225,13 @@ bool FixPropertyMol::grow_permolecule(int grow_by) {
   return old_molmax != molmax;
 }
 
-
 /* ----------------------------------------------------------------------
    Count the number of molecules with non-zero mass.
    Mass of molecules is only counted from atoms in the group, so count is
    the number of molecules in the group.
 ------------------------------------------------------------------------- */
-void FixPropertyMol::count_molecules() {
+void FixPropertyMol::count_molecules()
+{
   count_step = update->ntimestep;
   nmolecule = 0;
   for (tagint m = 0; m < molmax; ++m)
@@ -229,24 +242,37 @@ void FixPropertyMol::count_molecules() {
    Update total mass of each molecule
 ------------------------------------------------------------------------- */
 
-void FixPropertyMol::mass_compute() {
+void FixPropertyMol::mass_compute()
+{
   mass_step = update->ntimestep;
   if (dynamic_mols) grow_permolecule();
   if (molmax == 0) return;
   double massone;
-  for (tagint m = 0; m < molmax; ++m)
-    massproc[m] = 0.0;
+  for (tagint m = 0; m < molmax; ++m) massproc[m] = 0.0;
 
   for (int i = 0; i < atom->nlocal; ++i) {
     if (groupbit & atom->mask[i]) {
-      tagint m = atom->molecule[i]-1;
+      tagint m = atom->molecule[i] - 1;
       if (m < 0) continue;
-      if (atom->rmass) massone = atom->rmass[i];
-      else massone = atom->mass[atom->type[i]];
+      if (atom->rmass)
+        massone = atom->rmass[i];
+      else
+        massone = atom->mass[atom->type[i]];
       massproc[m] += massone;
     }
   }
-  MPI_Allreduce(massproc,mass,molmax,MPI_DOUBLE,MPI_SUM,world);
+  if (use_mpiallreduce) {
+    MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
+  } else {
+    if (dynamic_mols || dynamic_group) pre_neighbor();
+    memset(mass, 0, molmax * sizeof(double));
+    for (auto m : local_mols) mass[m] = massproc[m];
+    int b = 0;
+    for (auto m : send_mols) buffer[buffer_mylo + b++] = mass[m];
+    MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+                   MPI_DOUBLE, world);
+    for (auto lookup : buffer_ghost_lookup) mass[lookup.second] += buffer[lookup.first];
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -254,7 +280,8 @@ void FixPropertyMol::mass_compute() {
    Also update molecular mass if group is dynamic
 ------------------------------------------------------------------------- */
 
-void FixPropertyMol::com_compute() {
+void FixPropertyMol::com_compute()
+{
   com_step = update->ntimestep;
   // Recalculate mass if number of molecules (max. mol id) changed, or if
   // group is dynamic
@@ -280,22 +307,23 @@ void FixPropertyMol::com_compute() {
 
   if (recalc_mass) {
     mass_step = update->ntimestep;
-    for (tagint m = 0; m < molmax; ++m)
-      massproc[m] = 0.0;
+    for (tagint m = 0; m < molmax; ++m) massproc[m] = 0.0;
   }
 
   for (int i = 0; i < nlocal; ++i) {
     if (groupbit & atom->mask[i]) {
-      tagint m = molecule[i]-1;
+      tagint m = molecule[i] - 1;
       if (m < 0) continue;
-      if (rmass) massone = rmass[i];
-      else massone = amass[type[i]];
+      if (rmass)
+        massone = rmass[i];
+      else
+        massone = amass[type[i]];
 
       // NOTE: if FP error becomes a problem here in long-running
       //       simulations, could maybe do something clever with
       //       image flags to reduce it, but MPI makes that difficult,
       //       and it would mean needing to store image flags for CoM
-      domain->unmap(x[i],atom->image[i],unwrap);
+      domain->unmap(x[i], atom->image[i], unwrap);
       comproc[m][0] += unwrap[0] * massone;
       comproc[m][1] += unwrap[1] * massone;
       comproc[m][2] += unwrap[2] * massone;
@@ -303,8 +331,8 @@ void FixPropertyMol::com_compute() {
     }
   }
 
-  MPI_Allreduce(&comproc[0][0],&com[0][0],3*molmax,MPI_DOUBLE,MPI_SUM,world);
-  if (recalc_mass) MPI_Allreduce(massproc,mass,molmax,MPI_DOUBLE,MPI_SUM,world);
+  MPI_Allreduce(&comproc[0][0], &com[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
+  if (recalc_mass) MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
 
   for (int m = 0; m < molmax; ++m) {
     // Some molecule ids could be skipped (not assigned atoms)
@@ -318,7 +346,6 @@ void FixPropertyMol::com_compute() {
   }
 }
 
-
 /* ----------------------------------------------------------------------
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
@@ -327,7 +354,7 @@ double FixPropertyMol::memory_usage()
 {
   double bytes = 0.0;
   if (mass_flag) bytes += nmax * 2 * sizeof(double);
-  if (com_flag)  bytes += nmax * 6 * sizeof(double);
+  if (com_flag) bytes += nmax * 6 * sizeof(double);
   return bytes;
 }
 
@@ -338,22 +365,118 @@ double FixPropertyMol::memory_usage()
 double FixPropertyMol::compute_array(int imol, int col)
 {
   if (imol > static_cast<int>(molmax))
-    error->all(FLERR, fmt::format(
-      "Cannot request info for molecule {} from fix property/mol (molmax = {})",
-      imol, molmax));
+    error->all(
+        FLERR,
+        fmt::format("Cannot request info for molecule {} from fix property/mol (molmax = {})", imol,
+                    molmax));
 
   if (col == 3) {
     // Mass requested
-    if (!mass_flag)
-      error->all(FLERR, "This fix property/mol does not calculate mass");
+    if (!mass_flag) error->all(FLERR, "This fix property/mol does not calculate mass");
     if (dynamic_group && mass_step != update->ntimestep) mass_compute();
     return mass[imol];
   } else {
     // CoM requested
-    if (!com_flag)
-      error->all(FLERR, "This fix property/mol does not calculate CoM");
+    if (!com_flag) error->all(FLERR, "This fix property/mol does not calculate CoM");
     if (com_step != update->ntimestep) com_compute();
     return com[imol][col];
+  }
+}
+
+/* ----------------------------------------------------------------------
+   pre-neighbor mpi rendezvous
+------------------------------------------------------------------------- */
+
+void FixPropertyMol::pre_neighbor()
+{
+  if (update->ntimestep <= preneigh_step) return;
+  preneigh_step = update->ntimestep;
+
+  local_mols.clear();
+  ghost_mols.clear();
+  send_mols.clear();
+  buffer_ghost_lookup.clear();
+
+  int const nlocal = atom->nlocal;
+  int const nghost = atom->nghost;
+  int *mask = atom->mask;
+  tagint *molecule = atom->molecule;
+
+  for (int i = 0; i < nlocal; ++i) {
+    if (!(mask[i] & groupbit)) continue;
+    local_mols.insert(molecule[i] - 1);
+  }
+
+  for (int i = nlocal; i < nlocal + nghost; ++i) {
+    if (!(mask[i] & groupbit)) continue;
+    if (atom->map(atom->tag[i]) < nlocal) continue;    // remove ghosts of locals
+    ghost_mols.insert(molecule[i] - 1);
+  }
+
+  // gather global list of ghost_mols
+  send_size = ghost_mols.size();
+  MPI_Allgather(&send_size, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+  displs[0] = 0;
+  buffer_size = recvcounts[0];
+  buffer_mylo = 0;            // defaults for proc 0
+  buffer_myhi = send_size;    // defaults for proc 0
+  for (int p = 1; p < comm->nprocs; p++) {
+    displs[p] = displs[p - 1] + recvcounts[p - 1];
+    buffer_size += recvcounts[p];
+    if (p == comm->me) {
+      buffer_mylo = displs[p];
+      buffer_myhi = displs[p] + send_size;
+    }
+  }
+  buffer.resize(buffer_size);
+  int b = 0;
+  for (auto m : ghost_mols) { buffer[buffer_mylo + b++] = ubuf(m).d; }
+  MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+                 MPI_DOUBLE, world);
+
+  // check which mols I should send
+  for (int b = 0; b < buffer_mylo; ++b) {
+    tagint m = ubuf(buffer[b]).i;
+    auto found = local_mols.find(m);
+    if (found != local_mols.end()) send_mols.insert(m);
+  }
+  for (int b = buffer_myhi; b < buffer_size; ++b) {
+    tagint m = ubuf(buffer[b]).i;
+    auto found = local_mols.find(m);
+    if (found != local_mols.end()) send_mols.insert(m);
+  }
+
+  // gather global list of send_mols
+  send_size = send_mols.size();
+  MPI_Allgather(&send_size, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+  displs[0] = 0;
+  buffer_size = recvcounts[0];
+  buffer_mylo = 0;            // defaults for proc 0
+  buffer_myhi = send_size;    // defaults for proc 0
+  for (int p = 1; p < comm->nprocs; p++) {
+    displs[p] = displs[p - 1] + recvcounts[p - 1];
+    buffer_size += recvcounts[p];
+    if (p == comm->me) {
+      buffer_mylo = displs[p];
+      buffer_myhi = displs[p] + send_size;
+    }
+  }
+  buffer.resize(buffer_size);
+  b = 0;
+  for (auto m : send_mols) { buffer[buffer_mylo + b++] = ubuf(m).d; }
+  MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+                 MPI_DOUBLE, world);
+
+  // check which mols I should lookup
+  for (int b = 0; b < buffer_mylo; ++b) {
+    tagint m = ubuf(buffer[b]).i;
+    auto found = ghost_mols.find(m);
+    if (found != ghost_mols.end()) buffer_ghost_lookup[b] = m;
+  }
+  for (int b = buffer_myhi; b < buffer_size; ++b) {
+    tagint m = ubuf(buffer[b]).i;
+    auto found = ghost_mols.find(m);
+    if (found != ghost_mols.end()) buffer_ghost_lookup[b] = m;
   }
 }
 
@@ -361,43 +484,54 @@ double FixPropertyMol::compute_array(int imol, int col)
    memory handling for permolecule data
 ------------------------------------------------------------------------- */
 
-template<typename T> inline
-void FixPropertyMol::mem_create_impl(PerMolecule &item) {
+template <typename T> inline void FixPropertyMol::mem_create_impl(PerMolecule &item)
+{
   if (item.cols == 0)
-    memory->create(*(T**)item.address, nmax, item.name.c_str());
+    memory->create(*(T **) item.address, nmax, item.name.c_str());
   else if (item.cols > 0)
-    memory->create(*(T***)item.address, nmax, item.cols, item.name.c_str());
+    memory->create(*(T ***) item.address, nmax, item.cols, item.name.c_str());
 }
-void FixPropertyMol::mem_create(PerMolecule &item) {
+void FixPropertyMol::mem_create(PerMolecule &item)
+{
 
-  if      (item.datatype == Atom::DOUBLE) mem_create_impl<double>(item);
-  else if (item.datatype == Atom::INT)    mem_create_impl<int>(item);
-  else if (item.datatype == Atom::BIGINT) mem_create_impl<bigint>(item);
-
+  if (item.datatype == Atom::DOUBLE)
+    mem_create_impl<double>(item);
+  else if (item.datatype == Atom::INT)
+    mem_create_impl<int>(item);
+  else if (item.datatype == Atom::BIGINT)
+    mem_create_impl<bigint>(item);
 }
 
-template<typename T> inline
-void FixPropertyMol::mem_grow_impl(PerMolecule &item) {
+template <typename T> inline void FixPropertyMol::mem_grow_impl(PerMolecule &item)
+{
   if (item.cols == 0)
-    memory->grow(*(T**)item.address, nmax, item.name.c_str());
+    memory->grow(*(T **) item.address, nmax, item.name.c_str());
   else if (item.cols > 0)
-    memory->grow(*(T***)item.address, nmax, item.cols, item.name.c_str());
+    memory->grow(*(T ***) item.address, nmax, item.cols, item.name.c_str());
 }
-void FixPropertyMol::mem_grow(PerMolecule &item) {
-  if      (item.datatype == Atom::DOUBLE) mem_grow_impl<double>(item);
-  else if (item.datatype == Atom::INT)    mem_grow_impl<int>(item);
-  else if (item.datatype == Atom::BIGINT) mem_grow_impl<bigint>(item);
+void FixPropertyMol::mem_grow(PerMolecule &item)
+{
+  if (item.datatype == Atom::DOUBLE)
+    mem_grow_impl<double>(item);
+  else if (item.datatype == Atom::INT)
+    mem_grow_impl<int>(item);
+  else if (item.datatype == Atom::BIGINT)
+    mem_grow_impl<bigint>(item);
 }
 
-template<typename T> inline
-void FixPropertyMol::mem_destroy_impl(PerMolecule &item) {
+template <typename T> inline void FixPropertyMol::mem_destroy_impl(PerMolecule &item)
+{
   if (item.cols == 0)
-    memory->destroy(*(T**)item.address);
+    memory->destroy(*(T **) item.address);
   else if (item.cols > 0)
-    memory->destroy(*(T***)item.address);
+    memory->destroy(*(T ***) item.address);
 }
-void FixPropertyMol::mem_destroy(PerMolecule &item) {
-  if      (item.datatype == Atom::DOUBLE) mem_destroy_impl<double>(item);
-  else if (item.datatype == Atom::INT)    mem_destroy_impl<int>(item);
-  else if (item.datatype == Atom::BIGINT) mem_destroy_impl<bigint>(item);
+void FixPropertyMol::mem_destroy(PerMolecule &item)
+{
+  if (item.datatype == Atom::DOUBLE)
+    mem_destroy_impl<double>(item);
+  else if (item.datatype == Atom::INT)
+    mem_destroy_impl<int>(item);
+  else if (item.datatype == Atom::BIGINT)
+    mem_destroy_impl<bigint>(item);
 }

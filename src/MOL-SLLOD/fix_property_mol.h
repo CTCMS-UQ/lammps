@@ -21,6 +21,8 @@ FixStyle(property/mol,FixPropertyMol);
 #define LMP_FIX_PROPERTY_MOL_H
 
 #include "fix.h"
+#include <set>
+#include <unordered_map>
 
 namespace LAMMPS_NS {
 
@@ -31,6 +33,7 @@ class FixPropertyMol : public Fix {
   ~FixPropertyMol() override;
   int setmask() override;
   void init() override;
+  void pre_neighbor() override;
   void setup_pre_force(int) override;
   void setup_pre_force_respa(int, int) override;
   double memory_usage() override;
@@ -85,6 +88,14 @@ class FixPropertyMol : public Fix {
   void mem_create(PerMolecule &item);
   void mem_grow(PerMolecule &item);
   void mem_destroy(PerMolecule &item);
+
+  bigint preneigh_step; // Last step where preneigh was called
+  int *recvcounts, *displs;
+  std::set<tagint> local_mols, ghost_mols, send_mols;
+  std::vector<double> buffer;
+  int buffer_mylo, buffer_myhi, buffer_size, send_size;
+  std::unordered_map<int, tagint> buffer_ghost_lookup;
+  bool use_mpiallreduce;
 
  private:
   template<typename T> inline
