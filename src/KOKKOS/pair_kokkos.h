@@ -66,14 +66,14 @@ struct TallyMaskLookup {
 
   template<class U, std::size_t i = 0, std::enable_if_t<!(sizeof...(Ts) > 0) && !std::is_void<U>::value,bool> = true>
   constexpr static TALLY_MASK get_mask() {
-    static_assert(8*sizeof(TALLY_MASK) >= i, "Too many kokkos tally computes. Try increasing the size of TALLY_MASK.");
+    static_assert((TALLY_MASK)1 << i, "Too many kokkos tally computes. Try increasing the size of TALLY_MASK.");
     if (std::is_same<T,U>::value) return 1 << i;
     return 0;
   }
 
   template<class U, std::size_t i = 0, std::enable_if_t<(sizeof...(Ts) > 0) && !std::is_void<U>::value,bool> = true>
   constexpr static TALLY_MASK get_mask() {
-    static_assert(8*sizeof(TALLY_MASK) >= i, "Too many kokkos tally computes. Try increasing the size of TALLY_MASK.");
+    static_assert((TALLY_MASK)1 << i, "Too many kokkos tally computes. Try increasing the size of TALLY_MASK.");
     if (std::is_same<T,U>::value) return 1 << i;
     return TallyMaskLookup<DeviceType,Ts...>::template get_mask<U,i+1>();
   }
