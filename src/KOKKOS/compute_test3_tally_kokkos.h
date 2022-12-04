@@ -15,58 +15,58 @@
 
 #ifdef KOKKOS_TALLY_CLASS
 // clang-format off
-TallyStyle(ComputeTest2TallyKokkos<DeviceType>)
+TallyStyle(ComputeTest3TallyKokkos<DeviceType>)
 // clang-format on
 #elif defined(COMPUTE_CLASS)
 // clang-format off
-ComputeStyle(test2/tally/kk,ComputeTest2TallyKokkos<LMPDeviceType>);
-ComputeStyle(test2/tally/kk/device,ComputeTest2TallyKokkos<LMPDeviceType>);
-ComputeStyle(test2/tally/kk/host,ComputeTest2TallyKokkos<LMPHostType>);
+ComputeStyle(test3/tally/kk,ComputeTest3TallyKokkos<LMPDeviceType>);
+ComputeStyle(test3/tally/kk/device,ComputeTest3TallyKokkos<LMPDeviceType>);
+ComputeStyle(test3/tally/kk/host,ComputeTest3TallyKokkos<LMPHostType>);
 // clang-format on
 #else
 
-#ifndef LMP_COMPUTE_TEST2_TALLY_KOKKOS_H
-#define LMP_COMPUTE_TEST2_TALLY_KOKKOS_H
+#ifndef LMP_COMPUTE_TEST3_TALLY_KOKKOS_H
+#define LMP_COMPUTE_TEST3_TALLY_KOKKOS_H
 
 #include "compute.h"
 #include "kokkos_type.h"
 
 namespace LAMMPS_NS {
 
-struct ComputeTest2TallyEV {
+struct ComputeTest3TallyEV {
   F_FLOAT sum_epair;
 
   KOKKOS_INLINE_FUNCTION
-  ComputeTest2TallyEV() : sum_epair(0.0) {}
+  ComputeTest3TallyEV() : sum_epair(0.0) {}
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const ComputeTest2TallyEV &rhs) {
+  void operator+=(const ComputeTest3TallyEV &rhs) {
     sum_epair += rhs.sum_epair;
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile ComputeTest2TallyEV &rhs) volatile {
+  void operator+=(const volatile ComputeTest3TallyEV &rhs) volatile {
     sum_epair += rhs.sum_epair;
   }
 };
 
-template<class DeviceType> class ComputeTest2TallyKokkos;
+template<class DeviceType> class ComputeTest3TallyKokkos;
 
 // Functor type that provides an ev_tally function to be called per pair.
 // Needs to be header only for linking purposes
 template<class DeviceType>
-struct ComputeTest2TallyFunctor {
-  inline void init_step(class ComputeTest2TallyKokkos<DeviceType> *c_ptr) {
+struct ComputeTest3TallyFunctor {
+  inline void init_step(class ComputeTest3TallyKokkos<DeviceType> *c_ptr) {
     // NOTE: could set properties using c_ptr->members if needed (e.g. a dup of some Kokkos view)
   }
-  inline void consolidate(class ComputeTest2TallyKokkos<DeviceType> *c_ptr, const ComputeTest2TallyEV &ev) {
+  inline void consolidate(class ComputeTest3TallyKokkos<DeviceType> *c_ptr, const ComputeTest3TallyEV &ev) {
     // pass ev result back to compute
     c_ptr->ev = ev;
   }
 
   template<int NEIGHFLAG>
   KOKKOS_INLINE_FUNCTION
-  void ev_tally(ComputeTest2TallyEV &tally,
+  void ev_tally(ComputeTest3TallyEV &tally,
     const int &i, const int &j, const int &nlocal, const int &newton_pair,
     const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair,
     const F_FLOAT &delx, const F_FLOAT &dely, const F_FLOAT &delz) const
@@ -76,29 +76,29 @@ struct ComputeTest2TallyFunctor {
     // but would need to store a value per pair or use atomics.
 
     // Tally epair as an easily tested example
-    // Multiply by 2 to differentiate from test/tally/kk
-    tally.sum_epair += 2.0*(((NEIGHFLAG==HALF || NEIGHFLAG==HALFTHREAD)&&(newton_pair||(j<nlocal)))?1.0:0.5)*evdwl;
+    // Multiply by 3 to differentiate from test/tally/kk
+    tally.sum_epair += 3.0*(((NEIGHFLAG==HALF || NEIGHFLAG==HALFTHREAD)&&(newton_pair||(j<nlocal)))?1.0:0.5)*evdwl;
   }
 
 };
 
 template<class DeviceType>
-class ComputeTest2TallyKokkos : public Compute {
+class ComputeTest3TallyKokkos : public Compute {
 
  public:
   /* - Members required for kokkos tally framework ------------------ */
   // struct to handle tallying
-  typedef struct ComputeTest2TallyFunctor<DeviceType> tally_functor;
+  typedef struct ComputeTest3TallyFunctor<DeviceType> tally_functor;
 
   // Extra data to be reduced over during pair calculation
-  typedef ComputeTest2TallyEV tally_type;
+  typedef ComputeTest3TallyEV tally_type;
 
   // Called once per step to deduce required PairComputeFunctor type
   unsigned long tally_mask() override;
   /* --------------------------------------------------------------- */
 
-  ComputeTest2TallyKokkos(class LAMMPS *, int, char **);
-  ~ComputeTest2TallyKokkos() override;
+  ComputeTest3TallyKokkos(class LAMMPS *, int, char **);
+  ~ComputeTest3TallyKokkos() override;
 
   void init() override;
 
@@ -109,7 +109,7 @@ class ComputeTest2TallyKokkos : public Compute {
  private:
   bigint did_setup;
   tally_type ev;
-  friend struct ComputeTest2TallyFunctor<DeviceType>;
+  friend struct ComputeTest3TallyFunctor<DeviceType>;
 };
 
 }    // namespace LAMMPS_NS

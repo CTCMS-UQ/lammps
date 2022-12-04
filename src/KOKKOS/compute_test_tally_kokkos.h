@@ -56,10 +56,10 @@ template<class DeviceType> class ComputeTestTallyKokkos;
 // Needs to be header only for linking purposes
 template<class DeviceType>
 struct ComputeTestTallyFunctor {
-  void init_step(class ComputeTestTallyKokkos<DeviceType> *c_ptr) {
+  inline void init_step(class ComputeTestTallyKokkos<DeviceType> *c_ptr) {
     // NOTE: could set properties using c_ptr->members if needed (e.g. a dup of some Kokkos view)
   }
-  void consolidate(class ComputeTestTallyKokkos<DeviceType> *c_ptr, const ComputeTestTallyEV &ev) {
+  inline void consolidate(class ComputeTestTallyKokkos<DeviceType> *c_ptr, const ComputeTestTallyEV &ev) {
     // pass ev result back to compute
     c_ptr->ev = ev;
   }

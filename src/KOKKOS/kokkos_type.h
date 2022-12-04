@@ -413,103 +413,64 @@ typedef double E_FLOAT;
 
 // Attach arbitrary tally data to EV_FLOAT and FEV_FLOAT
 // Requires all kokkos tally computes define tally_type as a member,
-// and tally_type types need to have operator+= defined.
-// First, Rest are compute class types. Use these to know what to return from get().
-template<class First, class ... Rest>
+// and tally_type types need to have valid operator+=().
+// T, Ts... are compute class types. Use these to know what to return from get().
+template<class T, class ... Ts>
 struct EV_TALLY {
-  typename First::tally_type first;
-  EV_TALLY<Rest...> rest;
+  typename T::tally_type first;
+  EV_TALLY<Ts...> rest;
 
-  KOKKOS_INLINE_FUNCTION
+  KOKKOS_FORCEINLINE_FUNCTION
   EV_TALLY() : first(), rest() {}
 
-  template<class T>
-  KOKKOS_INLINE_FUNCTION
-  typename T::tally_type& get(
-      std::enable_if_t<std::is_same<First,T>::value,bool> = true)
+  template<class U>
+  inline const typename U::tally_type& get(
+      std::enable_if_t<std::is_same<T,U>::value,bool> = true) const
   {
     return first;
   }
 
-  template<class T>
-  KOKKOS_INLINE_FUNCTION
-  const typename T::tally_type& get(
-      std::enable_if_t<std::is_same<First,T>::value,bool> = true) const
+  template<class U>
+  inline const typename U::tally_type& get(
+      std::enable_if_t<!std::is_same<T,U>::value,bool> = true) const
   {
-    return first;
+    return rest.template get<U>();
   }
 
-  template<class T>
-  KOKKOS_INLINE_FUNCTION
-  const volatile typename T::tally_type& get(
-      std::enable_if_t<std::is_same<First,T>::value,bool> = true) const volatile
-  {
-    return first;
-  }
-
-  template<class T>
-  KOKKOS_INLINE_FUNCTION
-  typename T::tally_type& get(
-      std::enable_if_t<!std::is_same<First,T>::value,bool> = true)
-  {
-    return first;
-  }
-
-  template<class T>
-  KOKKOS_INLINE_FUNCTION
-  const typename T::tally_type& get(
-      std::enable_if_t<!std::is_same<First,T>::value,bool> = true) const
-  {
-    return rest.template get<T>();
-  }
-
-  template<class T>
-  KOKKOS_INLINE_FUNCTION
-  const volatile typename T::tally_type& get(
-      std::enable_if_t<!std::is_same<First,T>::value,bool> = true) const volatile
-  {
-    return rest.template get<T>();
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const EV_TALLY<First, Rest...> &rhs) {
+  KOKKOS_FORCEINLINE_FUNCTION
+  void operator+=(const EV_TALLY<T, Ts...> &rhs) {
     first += rhs.first;
     rest += rhs.rest;
   }
 
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile EV_TALLY<First, Rest...> &rhs) volatile {
+  KOKKOS_FORCEINLINE_FUNCTION
+  void operator+=(const volatile EV_TALLY<T, Ts...> &rhs) volatile {
     first += rhs.first;
     rest += rhs.rest;
   }
 };
 
-template<class First>
-struct EV_TALLY<First> {
-  typename First::tally_type first;
+template<class T>
+struct EV_TALLY<T> {
+  typename T::tally_type first;
 
-  KOKKOS_INLINE_FUNCTION
+  KOKKOS_FORCEINLINE_FUNCTION
   EV_TALLY() : first() {}
 
-  template<class T, std::enable_if_t<std::is_same<First,T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  typename T::tally_type& get() {return first;}
+  template<class U>
+  inline const typename U::tally_type& get(
+      std::enable_if_t<std::is_same<T,U>::value,bool> = true) const
+  {
+    return first;
+  }
 
-  template<class T, std::enable_if_t<std::is_same<First,T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  const typename T::tally_type& get() const {return first;}
-
-  template<class T, std::enable_if_t<std::is_same<First,T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  const volatile typename T::tally_type& get() const volatile {return first;}
-
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const EV_TALLY<First> &rhs) {
+  KOKKOS_FORCEINLINE_FUNCTION
+  void operator+=(const EV_TALLY<T> &rhs) {
     first += rhs.first;
   }
 
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile EV_TALLY<First> &rhs) volatile {
+  KOKKOS_FORCEINLINE_FUNCTION
+  void operator+=(const volatile EV_TALLY<T> &rhs) volatile {
     first += rhs.first;
   }
 };
@@ -538,12 +499,14 @@ struct EV_TALLY<void,void> {
   void operator+=(const volatile EV_TALLY<void,void> &rhs) volatile {}
 };
 
-template<class ... TallyEV>
+// Generic reduction type for EV tallying.
+// Ts... are kokkos tally compute class types.
+template<class ... Ts>
 struct s_EV_FLOAT {
   E_FLOAT evdwl;
   E_FLOAT ecoul;
   E_FLOAT v[6];
-  EV_TALLY<TallyEV...> tally;
+  EV_TALLY<Ts...> tally;
   KOKKOS_INLINE_FUNCTION
   s_EV_FLOAT() : tally() {
     evdwl = 0;
@@ -553,7 +516,7 @@ struct s_EV_FLOAT {
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const s_EV_FLOAT<TallyEV...> &rhs) {
+  void operator+=(const s_EV_FLOAT<Ts...> &rhs) {
     evdwl += rhs.evdwl;
     ecoul += rhs.ecoul;
     for (int i = 0; i < 6; ++i)
@@ -562,7 +525,7 @@ struct s_EV_FLOAT {
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile s_EV_FLOAT<TallyEV...> &rhs) volatile {
+  void operator+=(const volatile s_EV_FLOAT<Ts...> &rhs) volatile {
     evdwl += rhs.evdwl;
     ecoul += rhs.ecoul;
     for (int i = 0; i < 6; ++i)
@@ -571,30 +534,13 @@ struct s_EV_FLOAT {
   }
 
   template<class T, std::enable_if_t<std::is_void<T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  void get(const LAMMPS_NS::TALLY_MASK &mask) {}
-
-  template<class T, std::enable_if_t<std::is_void<T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  const void get() const {}
-
-  template<class T, std::enable_if_t<std::is_void<T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  const volatile void get() const volatile {}
+  inline const void get() const {}
 
   template<class T,std::enable_if_t<!std::is_void<T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  typename T::tally_type& get(const LAMMPS_NS::TALLY_MASK &mask) {return tally.template get<T>();}
-
-  template<class T,std::enable_if_t<!std::is_void<T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  const typename T::tally_type& get() const {return tally.template get<T>();}
-
-  template<class T,std::enable_if_t<!std::is_void<T>::value,bool> = true>
-  KOKKOS_INLINE_FUNCTION
-  const volatile typename T::tally_type& get() const volatile {return tally.template get<T>();}
+  inline const typename T::tally_type& get() const {return tally.template get<T>();}
 };
 
+// Specialise for no tally computes
 template<>
 struct s_EV_FLOAT<> {
   E_FLOAT evdwl;
@@ -671,13 +617,13 @@ struct s_EV_FLOAT_REAX {
 };
 typedef struct s_EV_FLOAT_REAX EV_FLOAT_REAX;
 
-template<class ... TallyEV>
+template<class ... Ts>
 struct s_FEV_FLOAT {
   F_FLOAT f[3];
   E_FLOAT evdwl;
   E_FLOAT ecoul;
   E_FLOAT v[6];
-  EV_TALLY<TallyEV...> tally;
+  EV_TALLY<Ts...> tally;
   KOKKOS_INLINE_FUNCTION
   s_FEV_FLOAT() : tally() {
     evdwl = 0;
@@ -689,7 +635,7 @@ struct s_FEV_FLOAT {
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const s_FEV_FLOAT<TallyEV...> &rhs) {
+  void operator+=(const s_FEV_FLOAT<Ts...> &rhs) {
     evdwl += rhs.evdwl;
     ecoul += rhs.ecoul;
     for (int i = 0; i < 6; ++i)
@@ -700,7 +646,7 @@ struct s_FEV_FLOAT {
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile s_FEV_FLOAT<TallyEV...> &rhs) volatile {
+  void operator+=(const volatile s_FEV_FLOAT<Ts...> &rhs) volatile {
     evdwl += rhs.evdwl;
     ecoul += rhs.ecoul;
     for (int i = 0; i < 6; ++i)
@@ -710,6 +656,7 @@ struct s_FEV_FLOAT {
     tally += rhs.tally;
   }
 };
+
 template<>
 struct s_FEV_FLOAT<> {
   F_FLOAT f[3];
