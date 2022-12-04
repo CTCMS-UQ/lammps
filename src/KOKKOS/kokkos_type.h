@@ -1514,7 +1514,7 @@ typedef SNAComplex<SNAreal> SNAcomplex;
   template<int NEIGHFLAG,bool STACKPARAMS,class Specialisation> \
   using pair_compute_functor = struct DeclPairComputeFunctor<Class,NEIGHFLAG,STACKPARAMS,Specialisation>; \
   template <class PairStyle, int NEIGHFLAG, bool STACKPARAMS, class TallyStyle, class Specialisation> friend struct PairComputeFunctor; \
-  template<class,int, bool, class, class, class, class...> friend struct TallyCombinator; \
+  template<class,int, bool, class, class, class, class...> friend struct TallyStyleImpl; \
   friend struct kokkos_tally;
 
 #endif
