@@ -57,7 +57,7 @@ struct DoCoul<1> {
 // to a larger data type if needed.
 // Specialise based on DeviceType so that lookup fails (returns 0) for computes
 // with DeviceType different to pair style.
-template<class DeviceType, class T, class ... Ts>
+template<class DeviceType, class T=void, class ... Ts>
 struct TallyMaskLookup {
   template<class U, std::size_t i = 0, std::enable_if_t<std::is_void<U>::value,bool> = true>
   constexpr static TALLY_MASK get_mask() {
@@ -88,7 +88,7 @@ struct s_TALLY_MASK {
 #include "style_tally_kokkos.h"
 #undef KOKKOS_TALLY_CLASS
 #undef TallyStyle
-    ,void> Lookup;
+    > Lookup;
 
   template<class T, class ... Ts>
   static constexpr TALLY_MASK get_tally_mask(std::enable_if_t<(sizeof...(Ts)>0),bool> = true) {
@@ -196,8 +196,7 @@ struct TallyFunctor<DeviceType, T> {
   }
 };
 
-// Specialise for voids to avoid errors. Can maybe remove this if 'void,void>'
-// tail can be removed when building TallyCombinator
+// Specialise for voids to avoid errors
 template<class DeviceType, class T>
 struct TallyFunctor<DeviceType,T,void> {
   typedef s_EV_FLOAT<T,void> ev_value_type;
@@ -1141,7 +1140,7 @@ struct kokkos_tally {
 };
 
 // Recursive lookup table for all combinations of tally computes.
-template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T, class U, class ... Ts>
+template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T=void, class U=void, class ... Ts>
 struct TallyStyleImpl {
   typedef TallyFunctor<typename PairStyle::device_type,T,void>    OnlyT;
   typedef TallyFunctor<typename PairStyle::device_type,T,U>       TU;
@@ -1218,7 +1217,6 @@ struct TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,U> {
 };
 
 // Specialise for voids to avoid compile error.
-// Can maybe remove if 'void,void>' tail can be avoided.
 template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T>
 struct TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,void> {
 
@@ -1274,13 +1272,13 @@ struct TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,void,void> 
 template<class PairStyle, int NEIGHFLAG, bool STACKPARAMS, class Specialisation=void>
 struct DeclPairComputeFunctor {
   typedef typename PairStyle::device_type DeviceType;
-  typedef TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,
+  typedef TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation
 #define KOKKOS_TALLY_CLASS
-#define TallyStyle(Class) Class,
+#define TallyStyle(Class) ,Class
 #include "style_tally_kokkos.h"
 #undef KOKKOS_TALLY_CLASS
 #undef TallyStyle
-  void,void> functor_type;
+  > functor_type;
 
   // Finish with two voids to make sure template is always satisfied even if no tally computes exist.
   // Could maybe reduce duplication elsewhere if this requirement can be removed.
