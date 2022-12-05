@@ -1106,7 +1106,8 @@ struct kokkos_tally {
     PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TallyCombo> ff{fpair,list,&tally_compute_pack};
     if (fpair->lmp->kokkos->neigh_thread) {
       int vector_length = 8;
-      int atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
+      int atoms_per_team = 32;
+      atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
       Kokkos::TeamPolicy<typename PairStyle::device_type,Kokkos::IndexType<int> > policy(list->inum,atoms_per_team,vector_length);
       Kokkos::parallel_reduce(policy,ff,ev);
     } else {
