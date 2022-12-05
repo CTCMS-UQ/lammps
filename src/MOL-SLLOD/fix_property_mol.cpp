@@ -335,7 +335,7 @@ void FixPropertyMol::com_compute()
     MPI_Allreduce(&comproc[0][0], &com[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
-    memset(com, 0, 3 * molmax * sizeof(double));
+    memset(&com[0][0], 0, 3 * molmax * sizeof(double));
     for (int d = 0; d < 3; d++) {
       for (auto m : local_mols) com[m][d] = comproc[m][d];
       int b = 0;
