@@ -318,19 +318,23 @@ struct PairComputeFunctor  {
 
   template<class T, std::enable_if_t<!std::is_void<T>::value,bool> = true>
   constexpr static T wrap_tally_style(T* t_ptr) {return *t_ptr;}
+
   template<class T, std::enable_if_t<std::is_void<T>::value,bool> = true>
   constexpr static T* wrap_tally_style(T* t_ptr) {return nullptr;}
 
   template<class T, class T_FEV, std::enable_if_t<!std::is_void<T>::value,bool> = true>
-  inline static void wrap_ev_tally(const T &t, T_FEV &ev,
+  KOKKOS_INLINE_FUNCTION
+  static void wrap_ev_tally(const T &t, T_FEV &ev,
       const int &i, const int &j, const int& nlocal, const int&newton_pair,
       const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair,
       const F_FLOAT &delx, const F_FLOAT &dely, const F_FLOAT &delz)
   {
     t.template ev_tally<NEIGHFLAG>(ev.tally,i,j,nlocal,newton_pair,evdwl,ecoul,fpair,delx,dely,delz);
   }
+
   template<class T, class T_FEV, std::enable_if_t<std::is_void<T>::value,bool> = true>
-  inline static void wrap_ev_tally(T* t_ptr, T_FEV&,
+  KOKKOS_INLINE_FUNCTION
+  static void wrap_ev_tally(T* t_ptr, T_FEV&,
       const int&, const int&, const int&, const int&,
       const F_FLOAT&, const F_FLOAT&, const F_FLOAT&,
       const F_FLOAT&, const F_FLOAT&, const F_FLOAT&) {}
@@ -1126,7 +1130,8 @@ struct kokkos_tally {
     PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation> ff{fpair,list};
     if (fpair->lmp->kokkos->neigh_thread) {
       int vector_length = 8;
-      int atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
+      int atoms_per_team = 32;
+      atoms_per_team = GetTeamSize<typename PairStyle::device_type>(ff, list->inum, (fpair->eflag || fpair->vflag), atoms_per_team, vector_length);
       Kokkos::TeamPolicy<typename PairStyle::device_type,Kokkos::IndexType<int> > policy(list->inum,atoms_per_team,vector_length);
       if (fpair->eflag || fpair->vflag) Kokkos::parallel_reduce(policy,ff,ev);
       else                              Kokkos::parallel_for(policy,ff);
