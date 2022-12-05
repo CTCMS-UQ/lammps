@@ -41,6 +41,7 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
   dynamic_group_allow = 1;
   dynamic_group = group->dynamic[igroup];
   dynamic_mols = 0;
+  use_mpiallreduce = false;
 
   while (iarg < narg) {
     if (strcmp(arg[iarg], "mass") == 0) {
@@ -55,6 +56,13 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
                    "Illegal fix property/mol command. "
                    "Expected value after 'dynamic' keyword");
       dynamic_mols = utils::logical(FLERR, arg[iarg], false, lmp);
+      iarg++;
+    } else if (strcmp(arg[iarg], "use_mpiallreduce") == 0) {
+      if (++iarg >= narg)
+        error->all(FLERR,
+                   "Illegal fix property/mol command. "
+                   "Expected value after 'use_mpiallreduce' keyword");
+      use_mpiallreduce = utils::logical(FLERR, arg[iarg], false, lmp);
       iarg++;
     } else
       error->all(FLERR, "Illegal fix property/mol command");
@@ -75,7 +83,6 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
 
   recvcounts = new int[comm->nprocs];
   displs = new int[comm->nprocs];
-  use_mpiallreduce = false;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -415,6 +422,7 @@ double FixPropertyMol::compute_array(int imol, int col)
 
 void FixPropertyMol::pre_neighbor()
 {
+  if (use_mpiallreduce) return;
   if (update->ntimestep <= preneigh_step) return;
   preneigh_step = update->ntimestep;
 
