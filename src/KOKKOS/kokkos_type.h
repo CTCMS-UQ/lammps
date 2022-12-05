@@ -534,7 +534,7 @@ struct s_EV_FLOAT {
   }
 
   template<class T, std::enable_if_t<std::is_void<T>::value,bool> = true>
-  inline const void get() const {}
+  inline void get() const {}
 
   template<class T,std::enable_if_t<!std::is_void<T>::value,bool> = true>
   inline const typename T::tally_type& get() const {return tally.template get<T>();}
