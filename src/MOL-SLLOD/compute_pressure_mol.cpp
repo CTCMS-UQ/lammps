@@ -329,8 +329,8 @@ void ComputePressureMol::compute_vector()
 
 void ComputePressureMol::virial_compute(int n, int ndiag)
 {
-  int i,j;
-  double v[9],*vcomponent;
+  int i;
+  double v[9];
 
   for (i = 0; i < n; i++) v[i] = 0.0;
 

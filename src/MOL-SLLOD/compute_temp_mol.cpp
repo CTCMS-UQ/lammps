@@ -108,21 +108,10 @@ void ComputeTempMol::setup()
 
 double ComputeTempMol::compute_scalar()
 {
-  int i;
   invoked_scalar = update->ntimestep;
 
   tagint molmax = molprop->molmax;
   double *molmass = molprop->mass;
-
-  // calculate global temperature
-
-  double **v = atom->v;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-  tagint m;
 
   // Calculate the thermal velocity (total minus streaming) of all molecules
   double ke_singles[6];
@@ -130,7 +119,7 @@ double ComputeTempMol::compute_scalar()
 
   // Tally up the molecule COM velocities to get the kinetic temperature
   double t = ke_singles[0]+ke_singles[1]+ke_singles[2];
-  for (m = 0; m < molmax; m++) {
+  for (tagint m = 0; m < molmax; m++) {
     t += (vcmall[m][0]*vcmall[m][0] + vcmall[m][1]*vcmall[m][1] + vcmall[m][2]*vcmall[m][2]) *
           molmass[m];
   }
@@ -148,30 +137,20 @@ double ComputeTempMol::compute_scalar()
 
 void ComputeTempMol::compute_vector()
 {
-  int i;
-
   invoked_vector = update->ntimestep;
 
   tagint molmax = molprop->molmax;
   double *molmass = molprop->mass;
 
-  double **v = atom->v;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-  tagint m;
-
   double massone,t[6];
-  for (i = 0; i < 6; i++) t[i] = 0.0;
+  for (int i = 0; i < 6; i++) t[i] = 0.0;
 
   double ke_singles[6];
   vcm_compute(ke_singles);
 
   // Tally up the molecule COM velocities to get the kinetic temperature
   // No need for MPI reductions, since every processor knows the molecule VCMs
-  for (m = 0; m < molmax; m++) {
+  for (tagint m = 0; m < molmax; m++) {
       t[0] += molmass[m] * vcmall[m][0] * vcmall[m][0];
       t[1] += molmass[m] * vcmall[m][1] * vcmall[m][1];
       t[2] += molmass[m] * vcmall[m][2] * vcmall[m][2];
@@ -180,7 +159,7 @@ void ComputeTempMol::compute_vector()
       t[5] += molmass[m] * vcmall[m][1] * vcmall[m][2];
   }
   // final KE. Include contribution from single atoms if there are any
-  for (i = 0; i < 6; i++) vector[i] = (t[i]+ke_singles[i])*force->mvv2e;
+  for (int i = 0; i < 6; i++) vector[i] = (t[i]+ke_singles[i])*force->mvv2e;
 }
 
 
@@ -260,7 +239,6 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
 
   // compute VCM for each molecule
 
-  double **x = atom->x;
   double **v = atom->v;
   int *mask = atom->mask;
   int *type = atom->type;
@@ -294,9 +272,9 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
       vcm[m][2] += v[i][2] * massone;
     }
 
-  double ke_total = 0;
   if (molmax > 0) MPI_Allreduce(&vcm[0][0],&vcmall[0][0],3*molmax,MPI_DOUBLE,MPI_SUM,world);
   if (ke_singles != nullptr) MPI_Allreduce(ke_local,ke_singles,6,MPI_DOUBLE,MPI_SUM,world);
+
   for (m = 0; m < molmax; m++) {
     if (molmass[m] > 0.0) {
       vcmall[m][0] /= molmass[m];

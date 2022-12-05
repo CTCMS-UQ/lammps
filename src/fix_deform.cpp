@@ -1065,33 +1065,25 @@ void FixDeform::update_box()
   // For styles with h_rate dependent on xy/xz/yz, need to set h_rate after box
   // flips so that the correct streaming velocity can be recovered by fix nvt/sllod
   if (triclinic) {
-    double *h = domain->h;
-
     for (i = 3; i < 6; i++) {
       if (set[i].style == TRATE) {
         h_rate[i] = set[i].rate * domain->h[i];
-      } if (set[i].style == ERATE) {
+      } else if (set[i].style == ERATE) {
         // Solve ODE for a,b,c vectors accounting for elongation caused by TRATE.
         // This is needed for SLLOD to be correct under mixed flow.
         // TODO: do other elongation styles need to be accounted for where possible?
         double delt = (update->ntimestep - update->beginstep) * update->dt;
-        double arate = 0.0, brate = 0.0, h_bb;
+        double arate = 0.0;
         if (i == 3) {
           if (set[1].style == TRATE) arate = set[1].rate;
-          if (set[2].style == TRATE) brate = set[2].rate;
-          h_bb = set[2].hi_start - set[2].lo_start;
           h_rate[i] = set[i].rate*(set[2].hi_target-set[2].lo_target) + arate*set[i].tilt_target;
         }
         if (i == 4) {
           if (set[0].style == TRATE) arate = set[0].rate;
-          if (set[2].style == TRATE) brate = set[2].rate;
-          h_bb = set[2].hi_start - set[2].lo_start;
           h_rate[i] = set[i].rate*(set[2].hi_target-set[2].lo_target) + arate*set[i].tilt_target;
         }
         if (i == 5) {
           if (set[0].style == TRATE) arate = set[0].rate;
-          if (set[1].style == TRATE) brate = set[1].rate;
-          h_bb = set[1].hi_start - set[1].lo_start;
           h_rate[i] = set[i].rate*(set[1].hi_target-set[1].lo_target) + arate*set[i].tilt_target;
         }
       }
