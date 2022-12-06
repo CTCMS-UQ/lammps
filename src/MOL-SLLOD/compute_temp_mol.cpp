@@ -142,7 +142,7 @@ void ComputeTempMol::compute_vector()
   tagint molmax = molprop->molmax;
   double *molmass = molprop->mass;
 
-  double massone,t[6];
+  double t[6];
   for (int i = 0; i < 6; i++) t[i] = 0.0;
 
   double ke_singles[6];
@@ -215,7 +215,6 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
 {
   tagint m;
   double massone;
-  double unwrap[3];
 
   // molid = 1 to molmax for included atoms, 0 for excluded atoms
   tagint *molecule = atom->molecule;

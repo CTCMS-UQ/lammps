@@ -269,7 +269,6 @@ void FixPropertyMol::com_compute() {
   double *amass = atom->mass;
   double *rmass = atom->rmass;
   double **x = atom->x;
-  double **v = atom->v;
   double massone, unwrap[3];
 
   for (int m = 0; m < molmax; ++m) {
