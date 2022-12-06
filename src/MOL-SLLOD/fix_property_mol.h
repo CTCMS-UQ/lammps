@@ -40,6 +40,9 @@ class FixPropertyMol : public Fix {
   double memory_usage() override;
   double compute_array(int, int) override;
 
+  std::set<tagint> owned_mols; // each mol is owned by exactly one proc
+  bool use_mpiallreduce; // tell computes distant mol properties are not known
+
   struct PerMolecule {
     std::string name;    // Identifier
     void *address;       // Main address
@@ -96,7 +99,6 @@ class FixPropertyMol : public Fix {
   std::vector<double> buffer;
   int buffer_mylo, buffer_myhi, buffer_size, send_size;
   std::unordered_map<int, tagint> buffer_ghost_lookup;
-  bool use_mpiallreduce;
 
  private:
   template <typename T> inline void mem_create_impl(PerMolecule &item);

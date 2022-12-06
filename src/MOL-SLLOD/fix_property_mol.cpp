@@ -241,8 +241,14 @@ void FixPropertyMol::count_molecules()
 {
   count_step = update->ntimestep;
   nmolecule = 0;
-  for (tagint m = 0; m < molmax; ++m)
-    if (mass[m] > 0.0) ++nmolecule;
+  if (use_mpiallreduce) {
+    for (tagint m = 0; m < molmax; ++m)
+      if (mass[m] > 0.0) ++nmolecule;
+  } else {
+    for (auto const &m : owned_mols)
+      if (mass[m] > 0.0) ++nmolecule;
+    MPI_Allreduce(MPI_IN_PLACE, &nmolecule, 1, MPI_LMP_TAGINT, MPI_SUM, world);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -501,16 +507,25 @@ void FixPropertyMol::pre_neighbor()
   MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                  MPI_DOUBLE, world);
 
-  // check which mols I should lookup
+  owned_mols = local_mols;
+  // check which mols I should lookup and own
   for (int b = 0; b < buffer_mylo; ++b) {
     tagint m = ubuf(buffer[b]).i;
     auto found = ghost_mols.find(m);
     if (found != ghost_mols.end()) buffer_ghost_lookup[b] = m;
+    if (m % 2 == 0) {
+      auto found = owned_mols.find(m);
+      if (found != owned_mols.end()) owned_mols.erase(m);
+    }
   }
   for (int b = buffer_myhi; b < buffer_size; ++b) {
     tagint m = ubuf(buffer[b]).i;
     auto found = ghost_mols.find(m);
     if (found != ghost_mols.end()) buffer_ghost_lookup[b] = m;
+    if (m % 2 == 1) {
+      auto found = owned_mols.find(m);
+      if (found != owned_mols.end()) owned_mols.erase(m);
+    }
   }
 }
 

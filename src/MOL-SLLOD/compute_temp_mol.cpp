@@ -129,11 +129,20 @@ double ComputeTempMol::compute_scalar()
   vcm_compute(ke_singles);
 
   // Tally up the molecule COM velocities to get the kinetic temperature
-  double t = ke_singles[0]+ke_singles[1]+ke_singles[2];
-  for (m = 0; m < molmax; m++) {
-    t += (vcmall[m][0]*vcmall[m][0] + vcmall[m][1]*vcmall[m][1] + vcmall[m][2]*vcmall[m][2]) *
-          molmass[m];
+  double t = 0;
+  if (molprop->use_mpiallreduce) {
+    for (m = 0; m < molmax; m++) {
+      t += (vcmall[m][0]*vcmall[m][0] + vcmall[m][1]*vcmall[m][1] + vcmall[m][2]*vcmall[m][2]) *
+           molmass[m];
+    }
+  } else {
+    for (const auto& m : molprop->owned_mols) {
+      t += (vcmall[m][0]*vcmall[m][0] + vcmall[m][1]*vcmall[m][1] + vcmall[m][2]*vcmall[m][2]) *
+           molmass[m];
+    }
+    MPI_Allreduce(MPI_IN_PLACE, &t, 1, MPI_DOUBLE, MPI_SUM, world);
   }
+  t += ke_singles[0] + ke_singles[1] + ke_singles[2];
 
   // final temperature
   if (dynamic)
@@ -170,14 +179,26 @@ void ComputeTempMol::compute_vector()
   vcm_compute(ke_singles);
 
   // Tally up the molecule COM velocities to get the kinetic temperature
+  if (molprop->use_mpiallreduce) {
   // No need for MPI reductions, since every processor knows the molecule VCMs
-  for (m = 0; m < molmax; m++) {
+    for (m = 0; m < molmax; m++) {
       t[0] += molmass[m] * vcmall[m][0] * vcmall[m][0];
       t[1] += molmass[m] * vcmall[m][1] * vcmall[m][1];
       t[2] += molmass[m] * vcmall[m][2] * vcmall[m][2];
       t[3] += molmass[m] * vcmall[m][0] * vcmall[m][1];
       t[4] += molmass[m] * vcmall[m][0] * vcmall[m][2];
       t[5] += molmass[m] * vcmall[m][1] * vcmall[m][2];
+    }
+  } else {
+    for (const auto& m : molprop->owned_mols) {
+      t[0] += molmass[m] * vcmall[m][0] * vcmall[m][0];
+      t[1] += molmass[m] * vcmall[m][1] * vcmall[m][1];
+      t[2] += molmass[m] * vcmall[m][2] * vcmall[m][2];
+      t[3] += molmass[m] * vcmall[m][0] * vcmall[m][1];
+      t[4] += molmass[m] * vcmall[m][0] * vcmall[m][2];
+      t[5] += molmass[m] * vcmall[m][1] * vcmall[m][2];
+    }
+    MPI_Allreduce(MPI_IN_PLACE, t, 6, MPI_DOUBLE, MPI_SUM, world);
   }
   // final KE. Include contribution from single atoms if there are any
   for (i = 0; i < 6; i++) vector[i] = (t[i]+ke_singles[i])*force->mvv2e;
@@ -244,9 +265,10 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
 
   // Update molecular masses if required
   // Also grows vcm and vcmall if needed
-  if ( (molprop->dynamic_group || molprop->dynamic_mols)
-      && molprop->mass_step != update->ntimestep)
-    molprop->mass_compute();
+  if (molprop->dynamic_group || molprop->dynamic_mols) {
+    if (!molprop->use_mpiallreduce) molprop->pre_neighbor(); // cheap if already called
+    if (molprop->mass_step != update->ntimestep) molprop->mass_compute();
+  }
   double *molmass = molprop->mass;
 
   // Reallocation handled by fix property/molecule.
