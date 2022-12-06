@@ -3,13 +3,14 @@
 # are removed. The resulting binary should be able to run most inputs.
 
 set(ALL_PACKAGES
+  AMOEBA
   ASPHERE
   BOCS
   BODY
   BPM
   BROWNIAN
   CG-DNA
-  CG-SDK
+  CG-SPICA
   CLASS2
   COLLOID
   COLVARS
@@ -40,6 +41,7 @@ set(ALL_PACKAGES
   MEAM
   MISC
   ML-IAP
+  ML-POD
   ML-SNAP
   MOFFF
   MOLECULE

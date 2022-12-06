@@ -1,7 +1,7 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    https://www.lammps.org/, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -19,6 +19,7 @@
 #include "error.h"
 #include "fix.h"
 #include "force.h"
+#include "label_map.h"
 #include "math_const.h"
 #include "memory.h"
 #include "modify.h"
@@ -208,7 +209,7 @@ void AtomVec::grow(int n)
   if (n == 0)
     grow_nmax();
   else
-    nmax = MAX(n,nmax);
+    nmax = MAX(n, nmax);
   atom->nmax = nmax;
   if (nmax < 0 || nmax > MAXSMALLINT) error->one(FLERR, "Per-processor system is too big");
 
@@ -1731,7 +1732,8 @@ void AtomVec::create_atom(int itype, double *coord)
    initialize other peratom quantities
 ------------------------------------------------------------------------- */
 
-void AtomVec::data_atom(double *coord, imageint imagetmp, const std::vector<std::string> &values)
+void AtomVec::data_atom(double *coord, imageint imagetmp, const std::vector<std::string> &values,
+                        std::string &extract)
 {
   int m, n, datatype, cols;
   void *pdata;
@@ -1769,6 +1771,10 @@ void AtomVec::data_atom(double *coord, imageint imagetmp, const std::vector<std:
     } else if (datatype == Atom::INT) {
       if (cols == 0) {
         int *vec = *((int **) pdata);
+        if (vec == atom->type) {    // custom treatment of atom types
+          extract = values[ivalue++];
+          continue;
+        }
         vec[nlocal] = utils::inumeric(FLERR, values[ivalue++], true, lmp);
       } else {
         int **array = *((int ***) pdata);
@@ -1789,9 +1795,9 @@ void AtomVec::data_atom(double *coord, imageint imagetmp, const std::vector<std:
 
   // error checks applicable to all styles
 
-  if (tag[nlocal] <= 0) error->one(FLERR, "Invalid atom ID in Atoms section of data file");
-  if (type[nlocal] <= 0 || type[nlocal] > atom->ntypes)
-    error->one(FLERR, "Invalid atom type in Atoms section of data file");
+  if (tag[nlocal] <= 0)
+    error->one(FLERR, "Invalid atom ID {} in line {} of Atoms section of data file", tag[nlocal],
+               nlocal + 1);
 
   // if needed, modify unpacked values or initialize other peratom values
 
@@ -1883,7 +1889,11 @@ void AtomVec::write_data(FILE *fp, int n, double **buf)
         }
       } else if (datatype == Atom::INT) {
         if (cols == 0) {
-          fmt::print(fp, " {}", ubuf(buf[i][j++]).i);
+          if (atom->types_style == Atom::LABELS &&
+              atom->peratom[mdata_atom.index[nn]].name == "type") {
+            fmt::print(fp, " {}", atom->lmap->typelabel[ubuf(buf[i][j++]).i - 1]);
+          } else
+            fmt::print(fp, " {}", ubuf(buf[i][j++]).i);
         } else {
           for (m = 0; m < cols; m++) fmt::print(fp, " {}", ubuf(buf[i][j++]).i);
         }
@@ -2090,8 +2100,11 @@ int AtomVec::pack_bond(tagint **buf)
 
 void AtomVec::write_bond(FILE *fp, int n, tagint **buf, int index)
 {
+  std::string typestr;
   for (int i = 0; i < n; i++) {
-    fmt::print(fp, "{} {} {} {}\n", index, buf[i][0], buf[i][1], buf[i][2]);
+    typestr = std::to_string(buf[i][0]);
+    if (atom->types_style == Atom::LABELS) typestr = atom->lmap->btypelabel[buf[i][0] - 1];
+    fmt::print(fp, "{} {} {} {}\n", index, typestr, buf[i][1], buf[i][2]);
     index++;
   }
 }
@@ -2152,8 +2165,11 @@ int AtomVec::pack_angle(tagint **buf)
 
 void AtomVec::write_angle(FILE *fp, int n, tagint **buf, int index)
 {
+  std::string typestr;
   for (int i = 0; i < n; i++) {
-    fmt::print(fp, "{} {} {} {} {}\n", index, buf[i][0], buf[i][1], buf[i][2], buf[i][3]);
+    typestr = std::to_string(buf[i][0]);
+    if (atom->types_style == Atom::LABELS) typestr = atom->lmap->atypelabel[buf[i][0] - 1];
+    fmt::print(fp, "{} {} {} {} {}\n", index, typestr, buf[i][1], buf[i][2], buf[i][3]);
     index++;
   }
 }
@@ -2212,8 +2228,11 @@ int AtomVec::pack_dihedral(tagint **buf)
 
 void AtomVec::write_dihedral(FILE *fp, int n, tagint **buf, int index)
 {
+  std::string typestr;
   for (int i = 0; i < n; i++) {
-    fmt::print(fp, "{} {} {} {} {} {}\n", index, buf[i][0], buf[i][1], buf[i][2], buf[i][3],
+    typestr = std::to_string(buf[i][0]);
+    if (atom->types_style == Atom::LABELS) typestr = atom->lmap->dtypelabel[buf[i][0] - 1];
+    fmt::print(fp, "{} {} {} {} {} {}\n", index, typestr, buf[i][1], buf[i][2], buf[i][3],
                buf[i][4]);
     index++;
   }
@@ -2273,8 +2292,11 @@ int AtomVec::pack_improper(tagint **buf)
 
 void AtomVec::write_improper(FILE *fp, int n, tagint **buf, int index)
 {
+  std::string typestr;
   for (int i = 0; i < n; i++) {
-    fmt::print(fp, "{} {} {} {} {} {}\n", index, buf[i][0], buf[i][1], buf[i][2], buf[i][3],
+    typestr = std::to_string(buf[i][0]);
+    if (atom->types_style == Atom::LABELS) typestr = atom->lmap->itypelabel[buf[i][0] - 1];
+    fmt::print(fp, "{} {} {} {} {} {}\n", index, typestr, buf[i][1], buf[i][2], buf[i][3],
                buf[i][4]);
     index++;
   }
