@@ -174,7 +174,7 @@ function(GenerateStyleHeaders output_path)
     GenerateStyleHeader(${output_path} PAIR       pair          ) # force
     GenerateStyleHeader(${output_path} READER     reader        ) # read_dump
     GenerateStyleHeader(${output_path} REGION     region        ) # domain
-    GenerateStyleHeader(${output_path} TALLY_KK   tally_kokkos  ) # tally_kokkos
+    GenerateStyleHeader(${output_path} TALLY_KK   tally_kokkos  ) # pair_kokkos
 endfunction(GenerateStyleHeaders)
 
 function(DetectBuildSystemConflict lammps_src_dir)
