@@ -98,9 +98,9 @@ void ComputePressureMolKokkos<DeviceType>::pair_setup_callback(int eflag, int vf
         view_com_peratom(i,2) = x(i,2);
       } else {
         Few<double,3> xcm;
-        xcm[0] = molprop->com[m][0];
-        xcm[1] = molprop->com[m][1];
-        xcm[2] = molprop->com[m][2];
+        xcm[0] = com[m][0];
+        xcm[1] = com[m][1];
+        xcm[2] = com[m][2];
         // CoM is stored in unwrapped coordinates. Need to map to same image as atom
         imageint ix = (2*IMGMAX - (image(i) & IMGMASK)) & IMGMASK;
         imageint iy = (2*IMGMAX - (image(i) >> IMGBITS & IMGMASK)) & IMGMASK;
