@@ -89,13 +89,13 @@ class ComputeTestTallyKokkos : public Compute {
  public:
   /* - Members required for kokkos tally framework ------------------ */
   // struct to handle tallying
-  typedef struct ComputeTestTallyFunctor<DeviceType> tally_functor;
+  typedef ComputeTestTallyFunctor<DeviceType> tally_functor;
 
   // Extra data to be reduced over during pair calculation
   typedef ComputeTestTallyEV tally_type;
 
   // Called once per step to deduce required PairComputeFunctor type
-  unsigned long tally_mask() override;
+  TALLY_MASK tally_mask() override;
   /* --------------------------------------------------------------- */
 
   ComputeTestTallyKokkos(class LAMMPS *, int, char **);

@@ -28,12 +28,12 @@ class ComputePressureMol : public Compute {
  public:
   ComputePressureMol(class LAMMPS *, int, char **);
   virtual ~ComputePressureMol() override;
-  void init() override;
+  virtual void init() override;
   double compute_scalar() override;
   void compute_vector() override;
   void reset_extra_compute_fix(const char *) override;
-  void pair_setup_callback(int, int) override;
-  void pair_tally_callback(int, int, int, int,
+  virtual void pair_setup_callback(int, int) override;
+  virtual void pair_tally_callback(int, int, int, int,
       double, double, double, double, double, double) override;
 
  protected:
@@ -57,7 +57,7 @@ class ComputePressureMol : public Compute {
 
   void virial_compute(int, int);
 
- private:
+ protected:
   bigint did_setup;
   char *pstyle;
   int nsub;
