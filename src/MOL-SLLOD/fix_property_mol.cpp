@@ -282,14 +282,15 @@ void FixPropertyMol::mass_compute()
     MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
-    int bb = buffer_mylo;
-    for (auto const &m : send_mols) buffer[bb++] = massproc[m];
-    MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
-                   MPI_DOUBLE, world);
-    for (auto const &lookup : buffer_ghost_lookup) massproc[lookup.second] += buffer[lookup.first];
+    std::fill_n(buffer.begin(), buffer_size, 0.);
+    for (auto const &lookup : comm_local_lookup) { buffer[lookup.second] = massproc[lookup.first]; }
+    MPI_Allreduce(MPI_IN_PLACE, &(buffer.front()), buffer_size, MPI_DOUBLE, MPI_SUM, world);
+    for (auto const &lookup : comm_ghost_lookup) { massproc[lookup.first] = buffer[lookup.second]; }
     memset(mass, 0, molmax * sizeof(double));
-    //for (auto const& m : local_mols) mass[m] = massproc[m];
-    //for (auto const& m : ghost_mols) mass[m] = massproc[m];
+    //for (auto const &m : local_mols) mass[m] = massproc[m];
+    //for (auto const &lookup : comm_ghost_lookup) {
+    //  mass[lookup.first] = buffer[lookup.second];
+    //}
     // ^^ this SHOULD work, but somehow this comm lags behind when it is used in
     // ComputePressureMol::pair_setup_callback (though not ComputeTempMol::vcm_compute!)
     // and it is too much work debugging for a mostly static and quite small comm
@@ -365,33 +366,47 @@ void FixPropertyMol::com_compute()
       com[m][1] = comproc[m][1];
       com[m][2] = comproc[m][2];
     }
-    int bb = 3 * buffer_mylo;
-    for (auto const &m : send_mols) {
-      buffer[bb++] = com[m][0];
-      buffer[bb++] = com[m][1];
-      buffer[bb++] = com[m][2];
+    std::fill_n(buffer.begin(), 3 * buffer_size, 0.);
+    for (auto const &lookup : comm_local_lookup) {
+      tagint m = lookup.first;
+      int idx = 3 * lookup.second;
+      buffer[idx++] = com[m][0];
+      buffer[idx++] = com[m][1];
+      buffer[idx++] = com[m][2];
     }
-    MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts3, displs3,
-                   MPI_DOUBLE, world);
-    for (auto const &lookup : buffer_ghost_lookup) {
-      int b = 3 * lookup.first;
-      com[lookup.second][0] += buffer[b++];
-      com[lookup.second][1] += buffer[b++];
-      com[lookup.second][2] += buffer[b++];
-    };
+    MPI_Allreduce(MPI_IN_PLACE, &(buffer.front()), 3 * buffer_size, MPI_DOUBLE, MPI_SUM, world);
+    for (auto const &lookup : comm_ghost_lookup) {
+      tagint m = lookup.first;
+      int idx = 3 * lookup.second;
+      com[m][0] = buffer[idx++];
+      com[m][1] = buffer[idx++];
+      com[m][2] = buffer[idx++];
+    }
   }
   if (recalc_mass) {
     if (use_mpiallreduce) {
       MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
     } else {
       if (dynamic_mols || dynamic_group) pre_neighbor();
+      std::fill_n(buffer.begin(), buffer_size, 0.);
+      for (auto const &lookup : comm_local_lookup) {
+        buffer[lookup.second] = massproc[lookup.first];
+      }
+      MPI_Allreduce(MPI_IN_PLACE, &(buffer.front()), buffer_size, MPI_DOUBLE, MPI_SUM, world);
+      for (auto const &lookup : comm_ghost_lookup) {
+        massproc[lookup.first] = buffer[lookup.second];
+      }
       memset(mass, 0, molmax * sizeof(double));
-      for (auto const &m : local_mols) mass[m] = massproc[m];
-      int bb = buffer_mylo;
-      for (auto const &m : send_mols) buffer[bb++] = mass[m];
-      MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
-                     MPI_DOUBLE, world);
-      for (auto const &lookup : buffer_ghost_lookup) mass[lookup.second] += buffer[lookup.first];
+      //for (auto const &m : local_mols) mass[m] = massproc[m];
+      //for (auto const &lookup : comm_ghost_lookup) {
+      //  mass[lookup.first] = buffer[lookup.second];
+      //}
+      // ^^ this SHOULD work, but somehow this comm lags behind when it is used in
+      // ComputePressureMol::pair_setup_callback (though not ComputeTempMol::vcm_compute!)
+      // and it is too much work debugging for a mostly static and quite small comm
+      // so we use this instead:
+      for (auto const &m : owned_mols) mass[m] = massproc[m];
+      MPI_Allreduce(MPI_IN_PLACE, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
     }
   }
 
@@ -457,7 +472,9 @@ void FixPropertyMol::pre_neighbor()
   local_mols.clear();
   ghost_mols.clear();
   send_mols.clear();
-  buffer_ghost_lookup.clear();
+  comm_mols.clear();
+  comm_local_lookup.clear();
+  comm_ghost_lookup.clear();
 
   int const nlocal = atom->nlocal;
   int const nghost = atom->nghost;
@@ -496,64 +513,36 @@ void FixPropertyMol::pre_neighbor()
   MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                  MPI_DOUBLE, world);
 
-  // check which mols I should send
-  for (int b = 0; b < buffer_mylo; ++b) {
-    tagint m = ubuf(buffer[b]).i;
-    auto found = local_mols.find(m);
-    if (found != local_mols.end()) send_mols.insert(m);
-  }
-  for (int b = buffer_myhi; b < buffer_size; ++b) {
-    tagint m = ubuf(buffer[b]).i;
-    auto found = local_mols.find(m);
-    if (found != local_mols.end()) send_mols.insert(m);
+  // build comm_mols and comm_X_lookups
+  for (double const &db : buffer) comm_mols.insert((tagint) ubuf(db).i);
+  buffer_size = (int) comm_mols.size();
+  buffer.resize(buffer_size);
+  int idx = 0;
+  double const negprocs = -comm->nprocs;
+  for (auto itr = comm_mols.begin(); itr != comm_mols.end(); itr++) {
+    tagint m = *itr;
+    bool m_is_odd = !!(m % 2);
+    buffer[idx] = (m_is_odd) ? 0. : negprocs;
+    auto found_local = local_mols.find(m);
+    if (found_local != local_mols.end()) {
+      comm_local_lookup[m] = idx;
+      buffer[idx] = (double) comm->me * ((m_is_odd) ? 1 : -1);
+    }
+    auto found_ghost = ghost_mols.find(m);
+    if (found_ghost != ghost_mols.end()) comm_ghost_lookup[m] = idx;
+    idx++;
   }
 
-  // gather global list of send_mols
-  send_size = send_mols.size();
-  MPI_Allgather(&send_size, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
-  displs[0] = 0;
-  buffer_size = recvcounts[0];
-  buffer_mylo = 0;            // defaults for proc 0
-  buffer_myhi = send_size;    // defaults for proc 0
-  for (int p = 1; p < comm->nprocs; p++) {
-    displs[p] = displs[p - 1] + recvcounts[p - 1];
-    buffer_size += recvcounts[p];
-    if (p == comm->me) {
-      buffer_mylo = displs[p];
-      buffer_myhi = displs[p] + send_size;
-    }
-  }
-  buffer.resize(buffer_size);
-  bb = buffer_mylo;
-  for (auto const &m : send_mols) { buffer[bb++] = ubuf(m).d; }
-  MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
-                 MPI_DOUBLE, world);
+  MPI_Allreduce(MPI_IN_PLACE, &(buffer.front()), buffer_size, MPI_DOUBLE, MPI_MAX, world);
 
   owned_mols = local_mols;
-  // check which mols I should lookup and own
-  for (int b = 0; b < buffer_mylo; ++b) {
-    tagint m = ubuf(buffer[b]).i;
-    auto found = ghost_mols.find(m);
-    if (found != ghost_mols.end()) buffer_ghost_lookup[b] = m;
-    if (m % 2 == 0) {
-      auto found = owned_mols.find(m);
-      if (found != owned_mols.end()) owned_mols.erase(m);
-    }
+  for (const auto &lookup : comm_local_lookup) {
+    tagint m = lookup.first;
+    int owner_proc = abs((int) buffer[lookup.second]);
+    if (comm->me != owner_proc) owned_mols.erase(m);
   }
-  for (int b = buffer_myhi; b < buffer_size; ++b) {
-    tagint m = ubuf(buffer[b]).i;
-    auto found = ghost_mols.find(m);
-    if (found != ghost_mols.end()) buffer_ghost_lookup[b] = m;
-    if (m % 2 == 1) {
-      auto found = owned_mols.find(m);
-      if (found != owned_mols.end()) owned_mols.erase(m);
-    }
-  }
-  for (int p = 0; p < comm->nprocs; p++) {
-    recvcounts3[p] = 3 * recvcounts[p];
-    displs3[p] = 3 * displs[p];
-  }
-  buffer.resize(3 * buffer_size);
+
+  buffer.assign(3 * buffer_size, 0.); // for comms of 3-vecs
 }
 
 /* ----------------------------------------------------------------------

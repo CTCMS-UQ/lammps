@@ -316,32 +316,38 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
       vcm[m][2] += v[i][2] * massone;
     }
 
+  // clang-format on
   double ke_total = 0;
-  if (molmax > 0) 
+  if (molmax > 0) {
     if (molprop->use_mpiallreduce) {
-      MPI_Allreduce(&vcm[0][0],&vcmall[0][0],3*molmax,MPI_DOUBLE,MPI_SUM,world);
+      MPI_Allreduce(&vcm[0][0], &vcmall[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
     } else {
       memset(&vcmall[0][0], 0, 3 * molmax * sizeof(double));
-    for (auto const &m : molprop->local_mols) {
-      vcmall[m][0] = vcm[m][0];
-      vcmall[m][1] = vcm[m][1];
-      vcmall[m][2] = vcm[m][2];
+      for (auto const &m : molprop->local_mols) {
+        vcmall[m][0] = vcm[m][0];
+        vcmall[m][1] = vcm[m][1];
+        vcmall[m][2] = vcm[m][2];
+      }
+      std::fill_n(molprop->buffer.begin(), 3 * molprop->buffer_size, 0.);
+      for (auto const &lookup : molprop->comm_local_lookup) {
+        tagint m = lookup.first;
+        int idx = 3 * lookup.second;
+        molprop->buffer[idx++] = vcmall[m][0];
+        molprop->buffer[idx++] = vcmall[m][1];
+        molprop->buffer[idx++] = vcmall[m][2];
+      }
+      MPI_Allreduce(MPI_IN_PLACE, &(molprop->buffer.front()), 3 * molprop->buffer_size, MPI_DOUBLE,
+                    MPI_SUM, world);
+      for (auto const &lookup : molprop->comm_ghost_lookup) {
+        tagint m = lookup.first;
+        int idx = 3 * lookup.second;
+        vcmall[m][0] = molprop->buffer[idx++];
+        vcmall[m][1] = molprop->buffer[idx++];
+        vcmall[m][2] = molprop->buffer[idx++];
+      }
     }
-    int bb = 3 * molprop->buffer_mylo;
-    for (auto const &m : molprop->send_mols) {
-      molprop->buffer[bb++] = vcmall[m][0];
-      molprop->buffer[bb++] = vcmall[m][1];
-      molprop->buffer[bb++] = vcmall[m][2];
-    }
-    MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DOUBLE, &(molprop->buffer.front()), molprop->recvcounts3, 
-        molprop->displs3, MPI_DOUBLE, world);
-    for (auto const &lookup : molprop->buffer_ghost_lookup) {
-      int b = 3 * lookup.first;
-      vcmall[lookup.second][0] += molprop->buffer[b++];
-      vcmall[lookup.second][1] += molprop->buffer[b++];
-      vcmall[lookup.second][2] += molprop->buffer[b++];
-    };
   }
+  // clang-format off
   if (ke_singles != nullptr) MPI_Allreduce(ke_local,ke_singles,6,MPI_DOUBLE,MPI_SUM,world);
   for (m = 0; m < molmax; m++) {
     if (molmass[m] > 0.0) {

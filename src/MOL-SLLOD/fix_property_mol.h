@@ -41,10 +41,11 @@ class FixPropertyMol : public Fix {
   double compute_array(int, int) override;
 
   std::set<tagint> local_mols, ghost_mols, send_mols;
+  std::set<tagint> comm_mols;
   std::set<tagint> owned_mols; // each mol is owned by exactly one proc
   std::vector<double> buffer;
   int buffer_mylo, buffer_myhi, buffer_size, send_size;
-  std::unordered_map<int, tagint> buffer_ghost_lookup;
+  std::unordered_map<int, tagint> comm_ghost_lookup, comm_local_lookup;
   bool use_mpiallreduce; // tell computes distant mol properties are not known
   int *recvcounts, *displs, *recvcounts3, *displs3;
 
