@@ -40,7 +40,11 @@ class FixPropertyMol : public Fix {
   double memory_usage() override;
   double compute_array(int, int) override;
 
+  std::set<tagint> local_mols, ghost_mols, send_mols;
   std::set<tagint> owned_mols; // each mol is owned by exactly one proc
+  std::vector<double> buffer;
+  int buffer_mylo, buffer_myhi, buffer_size, send_size;
+  std::unordered_map<int, tagint> buffer_ghost_lookup;
   bool use_mpiallreduce; // tell computes distant mol properties are not known
   int *recvcounts, *displs, *recvcounts3, *displs3;
 
@@ -95,10 +99,6 @@ class FixPropertyMol : public Fix {
   void mem_destroy(PerMolecule &item);
 
   bigint preneigh_step;    // Last step where preneigh was called
-  std::set<tagint> local_mols, ghost_mols, send_mols;
-  std::vector<double> buffer;
-  int buffer_mylo, buffer_myhi, buffer_size, send_size;
-  std::unordered_map<int, tagint> buffer_ghost_lookup;
 
  private:
   template <typename T> inline void mem_create_impl(PerMolecule &item);
