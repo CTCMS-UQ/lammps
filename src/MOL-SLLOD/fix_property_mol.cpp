@@ -83,6 +83,8 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
 
   recvcounts = new int[comm->nprocs];
   displs = new int[comm->nprocs];
+  recvcounts3 = new int[comm->nprocs];
+  displs3 = new int[comm->nprocs];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -92,6 +94,8 @@ FixPropertyMol::~FixPropertyMol()
   for (auto &item : permolecule) mem_destroy(item);
   delete[] recvcounts;
   delete[] displs;
+  delete[] recvcounts3;
+  delete[] displs3;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -279,10 +283,10 @@ void FixPropertyMol::mass_compute()
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
     int bb = buffer_mylo;
-    for (auto const& m : send_mols) buffer[bb++] = massproc[m];
+    for (auto const &m : send_mols) buffer[bb++] = massproc[m];
     MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                    MPI_DOUBLE, world);
-    for (auto const& lookup : buffer_ghost_lookup) massproc[lookup.second] += buffer[lookup.first];
+    for (auto const &lookup : buffer_ghost_lookup) massproc[lookup.second] += buffer[lookup.first];
     memset(mass, 0, molmax * sizeof(double));
     //for (auto const& m : local_mols) mass[m] = massproc[m];
     //for (auto const& m : ghost_mols) mass[m] = massproc[m];
@@ -290,7 +294,7 @@ void FixPropertyMol::mass_compute()
     // ComputePressureMol::pair_setup_callback (though not ComputeTempMol::vcm_compute!)
     // and it is too much work debugging for a mostly static and quite small comm
     // so we use this instead:
-    for (auto const& m : owned_mols) mass[m] = massproc[m];
+    for (auto const &m : owned_mols) mass[m] = massproc[m];
     MPI_Allreduce(MPI_IN_PLACE, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
   }
 }
@@ -356,14 +360,25 @@ void FixPropertyMol::com_compute()
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
     memset(&com[0][0], 0, 3 * molmax * sizeof(double));
-    for (int d = 0; d < 3; d++) {
-      for (auto const& m : local_mols) com[m][d] = comproc[m][d];
-      int bb = buffer_mylo;
-      for (auto const& m : send_mols) buffer[bb++] = com[m][d];
-      MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
-                     MPI_DOUBLE, world);
-      for (auto const& lookup : buffer_ghost_lookup) com[lookup.second][d] += buffer[lookup.first];
+    for (auto const &m : local_mols) {
+      com[m][0] = comproc[m][0];
+      com[m][1] = comproc[m][1];
+      com[m][2] = comproc[m][2];
     }
+    int bb = 3 * buffer_mylo;
+    for (auto const &m : send_mols) {
+      buffer[bb++] = com[m][0];
+      buffer[bb++] = com[m][1];
+      buffer[bb++] = com[m][2];
+    }
+    MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts3, displs3,
+                   MPI_DOUBLE, world);
+    for (auto const &lookup : buffer_ghost_lookup) {
+      int b = 3 * lookup.first;
+      com[lookup.second][0] += buffer[b++];
+      com[lookup.second][1] += buffer[b++];
+      com[lookup.second][2] += buffer[b++];
+    };
   }
   if (recalc_mass) {
     if (use_mpiallreduce) {
@@ -371,12 +386,12 @@ void FixPropertyMol::com_compute()
     } else {
       if (dynamic_mols || dynamic_group) pre_neighbor();
       memset(mass, 0, molmax * sizeof(double));
-      for (auto const& m : local_mols) mass[m] = massproc[m];
+      for (auto const &m : local_mols) mass[m] = massproc[m];
       int bb = buffer_mylo;
-      for (auto const& m : send_mols) buffer[bb++] = mass[m];
+      for (auto const &m : send_mols) buffer[bb++] = mass[m];
       MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                      MPI_DOUBLE, world);
-      for (auto const& lookup : buffer_ghost_lookup) mass[lookup.second] += buffer[lookup.first];
+      for (auto const &lookup : buffer_ghost_lookup) mass[lookup.second] += buffer[lookup.first];
     }
   }
 
@@ -510,7 +525,7 @@ void FixPropertyMol::pre_neighbor()
   }
   buffer.resize(buffer_size);
   bb = buffer_mylo;
-  for (auto const& m : send_mols) { buffer[bb++] = ubuf(m).d; }
+  for (auto const &m : send_mols) { buffer[bb++] = ubuf(m).d; }
   MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                  MPI_DOUBLE, world);
 
@@ -534,6 +549,11 @@ void FixPropertyMol::pre_neighbor()
       if (found != owned_mols.end()) owned_mols.erase(m);
     }
   }
+  for (int p = 0; p < comm->nprocs; p++) {
+    recvcounts3[p] = 3 * recvcounts[p];
+    displs3[p] = 3 * displs[p];
+  }
+  buffer.resize(3 * buffer_size);
 }
 
 /* ----------------------------------------------------------------------

@@ -42,6 +42,7 @@ class FixPropertyMol : public Fix {
 
   std::set<tagint> owned_mols; // each mol is owned by exactly one proc
   bool use_mpiallreduce; // tell computes distant mol properties are not known
+  int *recvcounts, *displs, *recvcounts3, *displs3;
 
   struct PerMolecule {
     std::string name;    // Identifier
@@ -94,7 +95,6 @@ class FixPropertyMol : public Fix {
   void mem_destroy(PerMolecule &item);
 
   bigint preneigh_step;    // Last step where preneigh was called
-  int *recvcounts, *displs;
   std::set<tagint> local_mols, ghost_mols, send_mols;
   std::vector<double> buffer;
   int buffer_mylo, buffer_myhi, buffer_size, send_size;
