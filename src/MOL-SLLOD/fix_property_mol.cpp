@@ -278,13 +278,20 @@ void FixPropertyMol::mass_compute()
     MPI_Allreduce(massproc, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
-    memset(mass, 0, molmax * sizeof(double));
-    for (auto const& m : local_mols) mass[m] = massproc[m];
     int bb = buffer_mylo;
-    for (auto const& m : send_mols) buffer[bb++] = mass[m];
+    for (auto const& m : send_mols) buffer[bb++] = massproc[m];
     MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                    MPI_DOUBLE, world);
-    for (auto const& lookup : buffer_ghost_lookup) mass[lookup.second] += buffer[lookup.first];
+    for (auto const& lookup : buffer_ghost_lookup) massproc[lookup.second] += buffer[lookup.first];
+    memset(mass, 0, molmax * sizeof(double));
+    //for (auto const& m : local_mols) mass[m] = massproc[m];
+    //for (auto const& m : ghost_mols) mass[m] = massproc[m];
+    // ^^ this SHOULD work, but somehow this comm lags behind when it is used in
+    // ComputePressureMol::pair_setup_callback (though not ComputeTempMol::vcm_compute!)
+    // and it is too much work debugging for a mostly static and quite small comm
+    // so we use this instead:
+    for (auto const& m : owned_mols) mass[m] = massproc[m];
+    MPI_Allreduce(MPI_IN_PLACE, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
   }
 }
 
