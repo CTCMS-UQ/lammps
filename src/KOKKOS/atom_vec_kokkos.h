@@ -128,12 +128,14 @@ class AtomVecKokkos : public AtomVec {
 
 
   int no_comm_vel_flag,no_border_vel_flag;
+  int no_comm_image_flag,no_border_image_flag;
 
  protected:
 
   HAT::t_x_array h_x;
   HAT::t_v_array h_v;
   HAT::t_f_array h_f;
+  HAT::t_imageint_1d h_image;
 
   class CommKokkos *commKK;
   size_t buffer_size;
@@ -198,6 +200,123 @@ class AtomVecKokkos : public AtomVec {
       src.template sync<LMPHostType>();
   }
   #endif
+};
+
+template<class DeviceType, int PBC_FLAG, bool IMG_FLAG>
+struct AtomVecKokkos_PackImageMaybe;
+
+template<class DeviceType, int PBC_FLAG>
+struct AtomVecKokkos_PackImageMaybe<DeviceType, PBC_FLAG, true> {
+  typedef ArrayTypes<DeviceType> AT;
+  const typename AT::t_imageint_1d_randomread _image;
+  int _dix, _diy, _diz;
+
+  AtomVecKokkos_PackImageMaybe(
+      const typename AT::t_imageint_1d_randomread& image,
+      const int& dix, const int& diy, const int& diz)
+    : _image(image),
+    _dix(dix), _diy(diy), _diz(diz) {}
+
+  template<int IDX>
+  KOKKOS_INLINE_FUNCTION
+  void pack_buf(const typename AT::t_xfloat_2d& buf,
+      const int& i, const int& j) const
+  {
+    if (PBC_FLAG == 0) {
+      buf(i,IDX) = d_ubuf(_image(j)).d;
+    } else {
+      imageint xi = (_image(j) & IMGMASK) - _dix;
+      imageint yi = ((_image(j) >> IMGBITS) & IMGMASK) - _diy;
+      imageint zi = (_image(j) >> IMG2BITS) - _diz;
+      imageint img = (xi & IMGMASK) |
+        ((yi & IMGMASK) << IMGBITS) |
+        ((zi & IMGMASK) << IMG2BITS);
+      buf(i,IDX) = d_ubuf(img).d;
+    }
+  }
+};
+
+template<class DeviceType, int PBC_FLAG>
+struct AtomVecKokkos_PackImageMaybe<DeviceType,PBC_FLAG,false> {
+  typedef ArrayTypes<DeviceType> AT;
+  AtomVecKokkos_PackImageMaybe(
+      const typename AT::t_imageint_1d_randomread&,
+      const int&, const int&, const int&) {}
+  template<int>
+  KOKKOS_INLINE_FUNCTION
+  void pack_buf(const typename AT::t_xfloat_2d&,
+      const int&, const int&) const {}
+};
+
+template<class DeviceType, bool IMG_FLAG>
+struct AtomVecKokkos_UnpackImageMaybe;
+
+template<class DeviceType>
+struct AtomVecKokkos_UnpackImageMaybe<DeviceType,true> {
+  typedef ArrayTypes<DeviceType> AT;
+  const typename AT::t_imageint_1d _image;
+
+  AtomVecKokkos_UnpackImageMaybe(const typename AT::t_imageint_1d& image)
+    : _image(image) {}
+
+  template<int IDX>
+  KOKKOS_INLINE_FUNCTION
+  void unpack_buf(const typename AT::t_xfloat_2d_const& _buf,
+      const int& i, const int& j) const
+  {
+    _image(i) = (imageint) d_ubuf(_buf(j,IDX)).i;
+  }
+};
+
+template<class DeviceType>
+struct AtomVecKokkos_UnpackImageMaybe<DeviceType,false> {
+  typedef ArrayTypes<DeviceType> AT;
+  AtomVecKokkos_UnpackImageMaybe(const typename AT::t_imageint_1d& image) {}
+  template<int>
+  KOKKOS_INLINE_FUNCTION
+  void unpack_buf(const typename AT::t_xfloat_2d_const&,
+      const int&, const int&) const {}
+};
+
+template<class DeviceType, int PBC_FLAG, bool IMG_FLAG>
+struct AtomVecKokkos_PackImageSelfMaybe;
+
+template<class DeviceType, int PBC_FLAG>
+struct AtomVecKokkos_PackImageSelfMaybe<DeviceType, PBC_FLAG, true> {
+  typedef ArrayTypes<DeviceType> AT;
+  const typename AT::t_imageint_1d_randomread _image;
+  const typename AT::t_imageint_1d _imagew;
+  int _dix, _diy, _diz;
+
+  AtomVecKokkos_PackImageSelfMaybe(
+      const typename AT::tdual_imageint_1d& image,
+      const int& dix, const int& diy, const int& diz)
+    : _image(image.template view<DeviceType>()),
+      _imagew(image.template view<DeviceType>()),
+      _dix(dix), _diy(diy), _diz(diz) {}
+
+  KOKKOS_INLINE_FUNCTION
+  void pack_buf(const int& i, const int& j) const {
+    if (PBC_FLAG == 0) {
+      _imagew(i) = (imageint) d_ubuf(_image(j)).i;
+    } else {
+      imageint xi = (_image(j) & IMGMASK) - _dix;
+      imageint yi = ((_image(j) >> IMGBITS) & IMGMASK) - _diy;
+      imageint zi = (_image(j) >> IMG2BITS) - _diz;
+      _imagew(i) = (xi & IMGMASK)
+        | ((yi & IMGMASK) << IMGBITS)
+        | ((zi & IMGMASK) << IMG2BITS);
+    }
+  }
+};
+
+template<class DeviceType, int PBC_FLAG>
+struct AtomVecKokkos_PackImageSelfMaybe<DeviceType,PBC_FLAG,false> {
+  typedef ArrayTypes<DeviceType> AT;
+  AtomVecKokkos_PackImageSelfMaybe(const typename AT::tdual_imageint_1d&,
+      const imageint&, const imageint&, const imageint&) {}
+  KOKKOS_INLINE_FUNCTION
+  void pack_buf(const int&, const int&) const {}
 };
 
 }

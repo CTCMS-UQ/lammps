@@ -359,11 +359,21 @@ int AtomVec::pack_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = x[j][0];
-      buf[m++] = x[j][1];
-      buf[m++] = x[j][2];
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = x[j][0];
+        buf[m++] = x[j][1];
+        buf[m++] = x[j][2];
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = x[j][0];
+        buf[m++] = x[j][1];
+        buf[m++] = x[j][2];
+        buf[m++] = ubuf(image[j]).d;
+      }
     }
   } else {
     if (domain->triclinic == 0) {
@@ -375,23 +385,19 @@ int AtomVec::pack_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
       dy = pbc[1] * domain->yprd + pbc[3] * domain->yz;
       dz = pbc[2] * domain->zprd;
     }
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = x[j][0] + dx;
-      buf[m++] = x[j][1] + dy;
-      buf[m++] = x[j][2] + dz;
-    }
-  }
-
-  if (comm_images) {
-    if (pbc_flag == 0) {
+    if (comm_images == 0) {
       for (i = 0; i < n; i++) {
         j = list[i];
-        buf[m++] = ubuf(image[j]).d;
+        buf[m++] = x[j][0] + dx;
+        buf[m++] = x[j][1] + dy;
+        buf[m++] = x[j][2] + dz;
       }
     } else {
       for (i = 0; i < n; i++) {
         j = list[i];
+        buf[m++] = x[j][0] + dx;
+        buf[m++] = x[j][1] + dy;
+        buf[m++] = x[j][2] + dz;
         imageint xi = (image[j] & IMGMASK) - pbc[0];
         imageint yi = ((image[j] >> IMGBITS) & IMGMASK) - pbc[1];
         imageint zi = (image[j] >> IMG2BITS) - pbc[2];
@@ -604,15 +610,19 @@ void AtomVec::unpack_comm(int n, int first, double *buf)
 
   m = 0;
   last = first + n;
-  for (i = first; i < last; i++) {
-    x[i][0] = buf[m++];
-    x[i][1] = buf[m++];
-    x[i][2] = buf[m++];
-  }
-
-  if (comm_images) {
-    for (i = first; i < last; i++)
+  if (comm_images == 0) {
+    for (i = first; i < last; i++) {
+      x[i][0] = buf[m++];
+      x[i][1] = buf[m++];
+      x[i][2] = buf[m++];
+    }
+  } else {
+    for (i = first; i < last; i++) {
+      x[i][0] = buf[m++];
+      x[i][1] = buf[m++];
+      x[i][2] = buf[m++];
       image[i] = (imageint) ubuf(buf[m++]).i;
+    }
   }
 
   if (ncomm) {

@@ -105,7 +105,6 @@ class AtomVecDPDKokkos : public AtomVecKokkos {
   DAT::t_tagint_1d d_tag;
   HAT::t_tagint_1d h_tag;
   DAT::t_imageint_1d d_image;
-  HAT::t_imageint_1d h_image;
   DAT::t_int_1d d_type, d_mask;
   HAT::t_int_1d h_type, h_mask;
 

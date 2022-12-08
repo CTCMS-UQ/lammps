@@ -48,6 +48,8 @@ AtomVecAngleKokkos::AtomVecAngleKokkos(LAMMPS *lmp) : AtomVecKokkos(lmp)
   atomKK = (AtomKokkos *) atom;
   commKK = (CommKokkos *) comm;
   buffer = nullptr;
+
+  no_comm_image_flag = 1;
 }
 
 /* ----------------------------------------------------------------------

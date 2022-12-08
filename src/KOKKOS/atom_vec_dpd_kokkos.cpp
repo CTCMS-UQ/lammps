@@ -49,6 +49,7 @@ AtomVecDPDKokkos::AtomVecDPDKokkos(LAMMPS *lmp) : AtomVecKokkos(lmp)
   commKK = (CommKokkos *) comm;
 
   no_comm_vel_flag = 1;
+  no_comm_image_flag = 1;
 }
 
 /* ----------------------------------------------------------------------

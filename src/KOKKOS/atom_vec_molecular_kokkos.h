@@ -119,7 +119,6 @@ class AtomVecMolecularKokkos : public AtomVecKokkos {
   HAT::t_int_1d h_type, h_mask;
 
   DAT::t_imageint_1d d_image;
-  HAT::t_imageint_1d h_image;
 
   DAT::t_x_array d_x;
   DAT::t_v_array d_v;

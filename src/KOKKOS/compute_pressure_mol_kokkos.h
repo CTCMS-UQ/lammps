@@ -61,10 +61,6 @@ class ComputePressureMolKokkos : public ComputePressureMol {
     inline void consolidate(ComputePressureMolKokkos *c_ptr, const TallyVirial &tally) {
       for (int i = 0; i < 9; ++i)
         c_ptr->pair_virial[i] = tally.virial[i];
-      printf("virial:\n  [ %g\t%g\t%g\n    %g\t%g\t%g\n    %g\t%g\t%g ]\n",
-          tally.virial[0], tally.virial[3], tally.virial[4],
-          tally.virial[6], tally.virial[1], tally.virial[5],
-          tally.virial[7], tally.virial[8], tally.virial[3]);
     }
 
     template<int NEIGHFLAG>
@@ -99,6 +95,7 @@ class ComputePressureMolKokkos : public ComputePressureMol {
   TALLY_MASK tally_mask() override;
 
   ComputePressureMolKokkos(LAMMPS *, int, char **);
+  ~ComputePressureMolKokkos();
   void init() override;
   void pair_setup_callback(int, int) override;
   void pair_tally_callback(int, int, int, int,

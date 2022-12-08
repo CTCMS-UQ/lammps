@@ -42,6 +42,11 @@ ComputePressureMolKokkos<DeviceType>::ComputePressureMolKokkos(LAMMPS *lmp, int 
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
+ComputePressureMolKokkos<DeviceType>::~ComputePressureMolKokkos() {
+  memoryKK->destroy_kokkos(k_com_peratom, com_peratom);
+}
+
+template<class DeviceType>
 void ComputePressureMolKokkos<DeviceType>::init()
 {
   ComputePressureMol::init();
@@ -109,7 +114,6 @@ void ComputePressureMolKokkos<DeviceType>::pair_setup_callback(int eflag, int vf
         view_com_peratom(i,0) = unwrap[0];
         view_com_peratom(i,1) = unwrap[1];
         view_com_peratom(i,2) = unwrap[2];
-        printf("CoM[%d]: [%g, %g, %g]\n", i, unwrap[0], unwrap[1], unwrap[2]);
       }
     });
   k_com_peratom.template modify<DeviceType>();

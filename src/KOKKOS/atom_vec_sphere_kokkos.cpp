@@ -56,6 +56,7 @@ AtomVecSphereKokkos::AtomVecSphereKokkos(LAMMPS *lmp) : AtomVecKokkos(lmp)
   commKK = (CommKokkos *) comm;
 
   no_border_vel_flag = 0;
+  no_comm_image_flag = 1;
 }
 
 /* ---------------------------------------------------------------------- */

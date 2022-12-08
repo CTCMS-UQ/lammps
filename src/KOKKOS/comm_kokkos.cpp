@@ -148,6 +148,9 @@ void CommKokkos::init()
 
   if (ghost_velocity && ((AtomVecKokkos*)atom->avec)->no_comm_vel_flag) // not all Kokkos atom_vec styles have comm vel pack/unpack routines yet
     forward_comm_classic = true;
+
+  if (ghost_imageflags && ((AtomVecKokkos*)atom->avec)->no_comm_image_flag) // not all Kokkos atom_vec styles have comm image pack/unpack routines yet
+    forward_comm_classic = true;
 }
 
 /* ----------------------------------------------------------------------
@@ -896,7 +899,8 @@ void CommKokkos::borders()
     static int print = 1;
 
     if (mode != Comm::SINGLE || bordergroup ||
-         (ghost_velocity && ((AtomVecKokkos*)atom->avec)->no_border_vel_flag)) {
+         (ghost_velocity && ((AtomVecKokkos*)atom->avec)->no_border_vel_flag) ||
+         (ghost_imageflags && ((AtomVecKokkos*)atom->avec)->no_border_image_flag)) {
       if (print && comm->me==0) {
         error->warning(FLERR,"Required border comm not yet implemented in Kokkos communication, "
                       "switching to classic exchange/border communication");
@@ -1300,28 +1304,21 @@ void CommKokkos::grow_send_kokkos(int n, int flag, ExecutionSpace space)
 {
   maxsend = static_cast<int> (BUFFACTOR * n);
   int maxsend_border = (maxsend+BUFEXTRA+5)/atom->avec->size_border + 2;
+  int avec_size_border = atom->avec->size_border;
+  if (ghost_velocity) avec_size_border += atom->avec->size_velocity;
+  if (ghost_imageflags) ++avec_size_border;
   if (flag) {
     if (space == Device)
       k_buf_send.modify<LMPDeviceType>();
     else
       k_buf_send.modify<LMPHostType>();
 
-    if (ghost_velocity)
-      k_buf_send.resize(maxsend_border,
-                        atom->avec->size_border + atom->avec->size_velocity);
-    else
-      k_buf_send.resize(maxsend_border,atom->avec->size_border);
+    k_buf_send.resize(maxsend_border, avec_size_border);
     buf_send = k_buf_send.view<LMPHostType>().data();
   }
   else {
-    if (ghost_velocity)
-      k_buf_send = DAT::
-        tdual_xfloat_2d("comm:k_buf_send",
-                        maxsend_border,
-                        atom->avec->size_border + atom->avec->size_velocity);
-    else
-      k_buf_send = DAT::
-        tdual_xfloat_2d("comm:k_buf_send",maxsend_border,atom->avec->size_border);
+    k_buf_send = DAT::
+      tdual_xfloat_2d("comm:k_buf_send",maxsend_border,avec_size_border);
     buf_send = k_buf_send.view<LMPHostType>().data();
   }
 }
@@ -1334,8 +1331,17 @@ void CommKokkos::grow_recv_kokkos(int n, ExecutionSpace /*space*/)
 {
   maxrecv = static_cast<int> (BUFFACTOR * n);
   int maxrecv_border = (maxrecv+BUFEXTRA+5)/atom->avec->size_border + 2;
+  // NOTE: The view below was using just atom->avec->size_border as the 2nd
+  // dimension size, and not accounting for velocities if ghost_velocity flag
+  // is set, so k_buf_recv would be smaller than k_buf_send.
+  // Not sure if this was a bug, since it won't be hit unless using GPU
+  // and atom_style sphere/kk (only atom style that supports border velocity),
+  // but I've assumed it is and fixed it.
+  int avec_size_border = atom->avec->size_border;
+  if (ghost_velocity) avec_size_border += atom->avec->size_velocity;
+  if (ghost_imageflags) ++avec_size_border;
   k_buf_recv = DAT::
-    tdual_xfloat_2d("comm:k_buf_recv",maxrecv_border,atom->avec->size_border);
+    tdual_xfloat_2d("comm:k_buf_recv",maxrecv_border,avec_size_border);
   buf_recv = k_buf_recv.view<LMPHostType>().data();
 }
 
