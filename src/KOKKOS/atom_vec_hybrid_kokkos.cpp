@@ -310,9 +310,9 @@ int AtomVecHybridKokkos::unpack_exchange_kokkos(DAT::tdual_xfloat_2d & /*k_buf*/
 int AtomVecHybridKokkos::pack_comm(int n, int *list, double *buf,
                              int pbc_flag, int *pbc)
 {
-  auto mask = X_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->sync(Host,mask);
+  auto sync_mask = X_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
+  atomKK->sync(Host,sync_mask);
 
   int i,j,k,m;
   double dx,dy,dz;
@@ -382,9 +382,9 @@ int AtomVecHybridKokkos::pack_comm(int n, int *list, double *buf,
 int AtomVecHybridKokkos::pack_comm_vel(int n, int *list, double *buf,
                                  int pbc_flag, int *pbc)
 {
-  auto mask = X_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->sync(Host,mask);
+  auto sync_mask = X_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
+  if (comm_images) sync_mask |= IMAGE_MASK;
+  atomKK->sync(Host,sync_mask);
 
   int i,j,k,m;
   double dx,dy,dz,dvx,dvy,dvz;
@@ -526,9 +526,9 @@ void AtomVecHybridKokkos::unpack_comm(int n, int first, double *buf)
     }
   }
 
-  auto mask = X_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->modified(Host,mask);
+  auto mod_mask = X_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   // unpack sub-style contributions as contiguous chunks
 
@@ -568,9 +568,9 @@ void AtomVecHybridKokkos::unpack_comm_vel(int n, int first, double *buf)
     }
   }
 
-  auto mask = X_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->modified(Host,mask);
+  auto mod_mask = X_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   // unpack sub-style contributions as contiguous chunks
 
@@ -629,9 +629,9 @@ void AtomVecHybridKokkos::unpack_reverse(int n, int *list, double *buf)
 int AtomVecHybridKokkos::pack_border(int n, int *list, double *buf,
                                int pbc_flag, int *pbc)
 {
-  auto mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->sync(Host,mask);
+  auto sync_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
+  atomKK->sync(Host,sync_mask);
 
   int i,j,k,m;
   double dx,dy,dz;
@@ -717,9 +717,9 @@ int AtomVecHybridKokkos::pack_border(int n, int *list, double *buf,
 int AtomVecHybridKokkos::pack_border_vel(int n, int *list, double *buf,
                                    int pbc_flag, int *pbc)
 {
-  auto mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->sync(Host,mask);
+  auto sync_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
+  if (comm_images) sync_mask |= IMAGE_MASK;
+  atomKK->sync(Host,sync_mask);
   int i,j,k,m;
   double dx,dy,dz,dvx,dvy,dvz;
   int omega_flag = atom->omega_flag;
@@ -881,9 +881,9 @@ void AtomVecHybridKokkos::unpack_border(int n, int first, double *buf)
     }
   }
 
-  auto mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->modified(Host,mask);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   // unpack sub-style contributions as contiguous chunks
 
@@ -933,9 +933,9 @@ void AtomVecHybridKokkos::unpack_border_vel(int n, int first, double *buf)
     }
   }
 
-  auto mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->modified(Host,mask);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   // unpack sub-style contributions as contiguous chunks
 

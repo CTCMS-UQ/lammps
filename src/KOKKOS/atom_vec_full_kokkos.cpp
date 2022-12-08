@@ -753,9 +753,9 @@ struct AtomVecFullKokkos_UnpackBorder {
 void AtomVecFullKokkos::unpack_border_kokkos(const int &n, const int &first,
                                                   const DAT::tdual_xfloat_2d &buf,
                                                   ExecutionSpace space) {
-  auto pre_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK;
-  if (comm_images) pre_mask |= IMAGE_MASK;
-  atomKK->modified(space,pre_mask);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(space,mod_mask);
 
   while (first+n >= nmax) grow(0);
 
@@ -781,9 +781,7 @@ void AtomVecFullKokkos::unpack_border_kokkos(const int &n, const int &first,
     }
   }
 
-  auto post_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK;
-  if (comm_images) post_mask |= IMAGE_MASK;
-  atomKK->modified(space,post_mask);
+  atomKK->modified(space,mod_mask);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -821,9 +819,9 @@ void AtomVecFullKokkos::unpack_border(int n, int first, double *buf)
     }
   }
 
-  auto mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->modified(Host,mask);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   if (atom->nextra_border)
     for (int iextra = 0; iextra < atom->nextra_border; iextra++)
@@ -872,9 +870,9 @@ void AtomVecFullKokkos::unpack_border_vel(int n, int first, double *buf)
     }
   }
 
-  auto mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK|V_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
-  atomKK->modified(Host,mask);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|Q_MASK|MOLECULE_MASK|V_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   if (atom->nextra_border)
     for (int iextra = 0; iextra < atom->nextra_border; iextra++)

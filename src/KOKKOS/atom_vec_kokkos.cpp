@@ -119,10 +119,10 @@ int AtomVecKokkos::pack_comm_kokkos(const int &n,
   // Check whether to always run forward communication on the host
   // Choose correct forward PackComm kernel
 
-  auto mask = X_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
+  auto sync_mask = X_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
   if (commKK->forward_comm_on_host) {
-    atomKK->sync(Host,mask);
+    atomKK->sync(Host,sync_mask);
     if (pbc_flag) {
       if (domain->triclinic) {
         if (comm_images == 0) {
@@ -185,7 +185,7 @@ int AtomVecKokkos::pack_comm_kokkos(const int &n,
       }
     }
   } else {
-    atomKK->sync(Device,mask);
+    atomKK->sync(Device,sync_mask);
     if (pbc_flag) {
       if (domain->triclinic) {
         if (comm_images == 0) {
@@ -310,11 +310,11 @@ struct AtomVecKokkos_PackCommSelf {
 
 int AtomVecKokkos::pack_comm_self(const int &n, const DAT::tdual_int_2d &list, const int & iswap,
                                         const int nfirst, const int &pbc_flag, const int* const pbc) {
-  auto mask = X_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
+  auto sync_mask = X_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
   if (commKK->forward_comm_on_host) {
-    atomKK->sync(Host,mask);
-    atomKK->modified(Host,mask);
+    atomKK->sync(Host,sync_mask);
+    atomKK->modified(Host,sync_mask);
     if (pbc_flag) {
       if (domain->triclinic) {
         if (comm_images == 0) {
@@ -377,8 +377,8 @@ int AtomVecKokkos::pack_comm_self(const int &n, const DAT::tdual_int_2d &list, c
       }
     }
   } else {
-    atomKK->sync(Device,mask);
-    atomKK->modified(Device,mask);
+    atomKK->sync(Device,sync_mask);
+    atomKK->modified(Device,sync_mask);
     if (pbc_flag) {
       if (domain->triclinic) {
         if (comm_images == 0) {
@@ -569,11 +569,11 @@ struct AtomVecKokkos_PackCommSelfFused {
 int AtomVecKokkos::pack_comm_self_fused(const int &n, const DAT::tdual_int_2d &list, const DAT::tdual_int_1d &sendnum_scan,
                                          const DAT::tdual_int_1d &firstrecv, const DAT::tdual_int_1d &pbc_flag, const DAT::tdual_int_2d &pbc,
                                          const DAT::tdual_int_1d &g2l) {
-  auto mask = X_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
+  auto sync_mask = X_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
   if (commKK->forward_comm_on_host) {
-    atomKK->sync(Host,mask);
-    atomKK->modified(Host,mask);
+    atomKK->sync(Host,sync_mask);
+    atomKK->modified(Host,sync_mask);
     if (domain->triclinic) {
       if (comm_images == 0) {
         struct AtomVecKokkos_PackCommSelfFused<LMPHostType,1,false> f(
@@ -604,8 +604,8 @@ int AtomVecKokkos::pack_comm_self_fused(const int &n, const DAT::tdual_int_2d &l
       }
     }
   } else {
-    atomKK->sync(Device,mask);
-    atomKK->modified(Device,mask);
+    atomKK->sync(Device,sync_mask);
+    atomKK->modified(Device,sync_mask);
     if (domain->triclinic) {
       if (comm_images == 0) {
         struct AtomVecKokkos_PackCommSelfFused<LMPDeviceType,1,false> f(
@@ -671,11 +671,11 @@ struct AtomVecKokkos_UnpackComm {
 
 void AtomVecKokkos::unpack_comm_kokkos(const int &n, const int &first,
     const DAT::tdual_xfloat_2d &buf) {
-  auto mask = X_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
+  auto sync_mask = X_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
   if (commKK->forward_comm_on_host) {
-    atomKK->sync(Host,mask);
-    atomKK->modified(Host,mask);
+    atomKK->sync(Host,sync_mask);
+    atomKK->modified(Host,sync_mask);
     if (comm_images == 0) {
       struct AtomVecKokkos_UnpackComm<LMPHostType,false> f(
           atomKK->k_x,atomKK->k_image,buf,first);
@@ -686,8 +686,8 @@ void AtomVecKokkos::unpack_comm_kokkos(const int &n, const int &first,
       Kokkos::parallel_for(n,f);
     }
   } else {
-    atomKK->sync(Device,mask);
-    atomKK->modified(Device,mask);
+    atomKK->sync(Device,sync_mask);
+    atomKK->modified(Device,sync_mask);
     if (comm_images == 0) {
       struct AtomVecKokkos_UnpackComm<LMPDeviceType,false> f(
           atomKK->k_x,atomKK->k_image,buf,first);
@@ -800,10 +800,10 @@ int AtomVecKokkos::pack_comm_vel_kokkos(
   const int &pbc_flag,
   const int* const pbc)
 {
-  auto mask = X_MASK|V_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
+  auto sync_mask = X_MASK|V_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
   if (commKK->forward_comm_on_host) {
-    atomKK->sync(Host,mask);
+    atomKK->sync(Host,sync_mask);
     if (pbc_flag) {
       if (deform_vremap) {
         if (domain->triclinic) {
@@ -934,7 +934,7 @@ int AtomVecKokkos::pack_comm_vel_kokkos(
       }
     }
   } else {
-    atomKK->sync(Device,mask);
+    atomKK->sync(Device,sync_mask);
     if (pbc_flag) {
       if (deform_vremap) {
         if (domain->triclinic) {
@@ -1112,11 +1112,11 @@ struct AtomVecKokkos_UnpackCommVel {
 
 void AtomVecKokkos::unpack_comm_vel_kokkos(const int &n, const int &first,
     const DAT::tdual_xfloat_2d &buf) {
-  auto mask = X_MASK|V_MASK;
-  if (comm_images) mask |= IMAGE_MASK;
+  auto sync_mask = X_MASK|V_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
   if (commKK->forward_comm_on_host) {
-    atomKK->sync(Host,mask);
-    atomKK->modified(Host,mask);
+    atomKK->sync(Host,sync_mask);
+    atomKK->modified(Host,sync_mask);
     if (comm_images == 0) {
       struct AtomVecKokkos_UnpackCommVel<LMPHostType,false> f(
           atomKK->k_x,atomKK->k_v,atomKK->k_image,buf,first);
@@ -1127,8 +1127,8 @@ void AtomVecKokkos::unpack_comm_vel_kokkos(const int &n, const int &first,
       Kokkos::parallel_for(n,f);
     }
   } else {
-    atomKK->sync(Device,mask);
-    atomKK->modified(Device,mask);
+    atomKK->sync(Device,sync_mask);
+    atomKK->modified(Device,sync_mask);
     if (comm_images == 0) {
       struct AtomVecKokkos_UnpackCommVel<LMPDeviceType,false> f(
           atomKK->k_x,atomKK->k_v,atomKK->k_image,buf,first);
