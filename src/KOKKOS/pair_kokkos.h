@@ -1102,6 +1102,7 @@ struct kokkos_tally {
     }
 
     // Create pair compute functor with tally policy and reduce
+    // NOTE: Should neigh_thread be passed in to allow tallys to specialise for it?
     PairComputeFunctor<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TallyCombo> ff{fpair,list,&tally_compute_pack};
     if (fpair->lmp->kokkos->neigh_thread) {
       int vector_length = 8;
@@ -1148,6 +1149,7 @@ struct kokkos_tally {
 template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, class T=void, class U=void, class ... Ts>
 struct TallyStyleImpl {
   typedef TallyFunctor<typename PairStyle::device_type,T,void>    OnlyT;
+  typedef TallyFunctor<typename PairStyle::device_type,U,void>    OnlyU;
   typedef TallyFunctor<typename PairStyle::device_type,T,U>       TU;
   typedef TallyFunctor<typename PairStyle::device_type,T,Ts...>   TTs;
   typedef TallyFunctor<typename PairStyle::device_type,U,Ts...>   UTs;
@@ -1173,7 +1175,9 @@ struct TallyStyleImpl {
       const TALLY_MASK &mask)
   {
     // Check for exact matches
+    // OnlyU would get matched by next recursive step, but can check it here at no extra cost to save a jump
     if (mask == OnlyT::bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,OnlyT>(fpair,list);
+    if (mask == OnlyU::bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,OnlyU>(fpair,list);
     if (mask == TU::bitmask)    return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TU>(fpair,list);
     if (mask == TTs::bitmask)   return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TTs>(fpair,list);
     if (mask == UTs::bitmask)   return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,UTs>(fpair,list);
@@ -1192,7 +1196,6 @@ template<class PairStyle,int NEIGHFLAG,bool STACKPARAMS,class Specialisation, cl
 struct TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,U> {
   typedef TallyFunctor<typename PairStyle::device_type,T,void> OnlyT;
   typedef TallyFunctor<typename PairStyle::device_type,U,void> OnlyU;
-  typedef TallyFunctor<typename PairStyle::device_type,T,U>    TU;
   typedef TallyFunctor<typename PairStyle::device_type,T,U>    tally_style;
 
   inline static EV_FLOAT pair_compute_neighlist(
@@ -1215,7 +1218,6 @@ struct TallyStyleImpl<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,T,U> {
     // Get exact match or fall back to no tally
     if (mask == OnlyT::bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,OnlyT>(fpair,list);
     if (mask == OnlyU::bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,OnlyU>(fpair,list);
-    if (mask == TU::bitmask)    return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,TU>(fpair,list);
     if (mask == tally_style::bitmask) return kokkos_tally::pair_compute_neighlist_tally<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation,tally_style>(fpair,list);
     return kokkos_tally::pair_compute_neighlist<PairStyle,NEIGHFLAG,STACKPARAMS,Specialisation>(fpair,list);
   }
