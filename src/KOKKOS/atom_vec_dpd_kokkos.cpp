@@ -554,19 +554,35 @@ int AtomVecDPDKokkos::pack_comm(int n, int *list, double *buf,
   int i,j,m;
   double dx,dy,dz;
 
-  atomKK->sync(Host,X_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK);
+  auto sync_mask = X_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
+  atomKK->sync(Host,sync_mask);
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = h_dpdTheta[j];
-      buf[m++] = h_uCond[j];
-      buf[m++] = h_uMech[j];
-      buf[m++] = h_uChem[j];
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = h_dpdTheta[j];
+        buf[m++] = h_uCond[j];
+        buf[m++] = h_uMech[j];
+        buf[m++] = h_uChem[j];
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = ubuf(h_image[j]).d;
+        buf[m++] = h_dpdTheta[j];
+        buf[m++] = h_uCond[j];
+        buf[m++] = h_uMech[j];
+        buf[m++] = h_uChem[j];
+      }
     }
   } else {
     if (domain->triclinic == 0) {
@@ -578,15 +594,35 @@ int AtomVecDPDKokkos::pack_comm(int n, int *list, double *buf,
       dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
       dz = pbc[2]*domain->zprd;
     }
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0) + dx;
-      buf[m++] = h_x(j,1) + dy;
-      buf[m++] = h_x(j,2) + dz;
-      buf[m++] = h_dpdTheta[j];
-      buf[m++] = h_uCond[j];
-      buf[m++] = h_uMech[j];
-      buf[m++] = h_uChem[j];
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0) + dx;
+        buf[m++] = h_x(j,1) + dy;
+        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = h_dpdTheta[j];
+        buf[m++] = h_uCond[j];
+        buf[m++] = h_uMech[j];
+        buf[m++] = h_uChem[j];
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0) + dx;
+        buf[m++] = h_x(j,1) + dy;
+        buf[m++] = h_x(j,2) + dz;
+        imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+        imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+        imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+        imageint img = (xi & IMGMASK) |
+          ((yi & IMGMASK) << IMGBITS) |
+          ((zi & IMGMASK) << IMG2BITS);
+        buf[m++] = ubuf(img).d;
+        buf[m++] = h_dpdTheta[j];
+        buf[m++] = h_uCond[j];
+        buf[m++] = h_uMech[j];
+        buf[m++] = h_uChem[j];
+      }
     }
   }
   return m;
@@ -600,22 +636,41 @@ int AtomVecDPDKokkos::pack_comm_vel(int n, int *list, double *buf,
   int i,j,m;
   double dx,dy,dz,dvx,dvy,dvz;
 
-  atomKK->sync(Host,X_MASK|V_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK);
+  auto sync_mask = X_MASK|V_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK;
+  if (comm_images) sync_mask |= IMAGE_MASK;
+  atomKK->sync(Host,sync_mask);
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = h_v(j,0);
-      buf[m++] = h_v(j,1);
-      buf[m++] = h_v(j,2);
-      buf[m++] = h_dpdTheta[j];
-      buf[m++] = h_uCond[j];
-      buf[m++] = h_uMech[j];
-      buf[m++] = h_uChem[j];
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = h_v(j,0);
+        buf[m++] = h_v(j,1);
+        buf[m++] = h_v(j,2);
+        buf[m++] = h_dpdTheta[j];
+        buf[m++] = h_uCond[j];
+        buf[m++] = h_uMech[j];
+        buf[m++] = h_uChem[j];
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = h_v(j,0);
+        buf[m++] = h_v(j,1);
+        buf[m++] = h_v(j,2);
+        buf[m++] = ubuf(h_image[j]).d;
+        buf[m++] = h_dpdTheta[j];
+        buf[m++] = h_uCond[j];
+        buf[m++] = h_uMech[j];
+        buf[m++] = h_uChem[j];
+      }
     }
   } else {
     if (domain->triclinic == 0) {
@@ -628,41 +683,93 @@ int AtomVecDPDKokkos::pack_comm_vel(int n, int *list, double *buf,
       dz = pbc[2]*domain->zprd;
     }
     if (!deform_vremap) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = h_v(j,0);
-        buf[m++] = h_v(j,1);
-        buf[m++] = h_v(j,2);
-        buf[m++] = h_dpdTheta[j];
-        buf[m++] = h_uCond[j];
-        buf[m++] = h_uMech[j];
-        buf[m++] = h_uChem[j];
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_dpdTheta[j];
+          buf[m++] = h_uCond[j];
+          buf[m++] = h_uMech[j];
+          buf[m++] = h_uChem[j];
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          imageint xi = (h_image[j] & IMGMASK) - pbc[0];
+          imageint yi = ((h_image[j] >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image[j] >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+          buf[m++] = h_dpdTheta[j];
+          buf[m++] = h_uCond[j];
+          buf[m++] = h_uMech[j];
+          buf[m++] = h_uChem[j];
+        }
       }
     } else {
       dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
       dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
       dvz = pbc[2]*h_rate[2];
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        if (mask[i] & deform_groupbit) {
-          buf[m++] = h_v(j,0) + dvx;
-          buf[m++] = h_v(j,1) + dvy;
-          buf[m++] = h_v(j,2) + dvz;
-        } else {
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          if (mask[i] & deform_groupbit) {
+            buf[m++] = h_v(j,0) + dvx;
+            buf[m++] = h_v(j,1) + dvy;
+            buf[m++] = h_v(j,2) + dvz;
+          } else {
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+          }
+          buf[m++] = h_dpdTheta(j);
+          buf[m++] = h_uCond(j);
+          buf[m++] = h_uMech(j);
+          buf[m++] = h_uChem(j);
         }
-        buf[m++] = h_dpdTheta(j);
-        buf[m++] = h_uCond(j);
-        buf[m++] = h_uMech(j);
-        buf[m++] = h_uChem(j);
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          if (mask[i] & deform_groupbit) {
+            buf[m++] = h_v(j,0) + dvx;
+            buf[m++] = h_v(j,1) + dvy;
+            buf[m++] = h_v(j,2) + dvz;
+          } else {
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+          }
+          imageint xi = (h_image[j] & IMGMASK) - pbc[0];
+          imageint yi = ((h_image[j] >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image[j] >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+          buf[m++] = h_dpdTheta(j);
+          buf[m++] = h_uCond(j);
+          buf[m++] = h_uMech(j);
+          buf[m++] = h_uChem(j);
+        }
       }
     }
   }
@@ -677,17 +784,32 @@ void AtomVecDPDKokkos::unpack_comm(int n, int first, double *buf)
 
   m = 0;
   last = first + n;
-  for (i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_dpdTheta[i] = buf[m++];
-    h_uCond[i] = buf[m++];
-    h_uMech[i] = buf[m++];
-    h_uChem[i] = buf[m++];
+  if (comm_images == 0) {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_dpdTheta[i] = buf[m++];
+      h_uCond[i] = buf[m++];
+      h_uMech[i] = buf[m++];
+      h_uChem[i] = buf[m++];
+    }
+  } else {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_image[i] = (imageint) ubuf(buf[m++]).i;
+      h_dpdTheta[i] = buf[m++];
+      h_uCond[i] = buf[m++];
+      h_uMech[i] = buf[m++];
+      h_uChem[i] = buf[m++];
+    }
   }
 
-  atomKK->modified(Host,X_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK);
+  auto mod_mask = X_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -698,20 +820,38 @@ void AtomVecDPDKokkos::unpack_comm_vel(int n, int first, double *buf)
 
   m = 0;
   last = first + n;
-  for (i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_v(i,0) = buf[m++];
-    h_v(i,1) = buf[m++];
-    h_v(i,2) = buf[m++];
-    h_dpdTheta[i] = buf[m++];
-    h_uCond[i] = buf[m++];
-    h_uMech[i] = buf[m++];
-    h_uChem[i] = buf[m++];
+  if (comm_images == 0) {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_v(i,0) = buf[m++];
+      h_v(i,1) = buf[m++];
+      h_v(i,2) = buf[m++];
+      h_dpdTheta[i] = buf[m++];
+      h_uCond[i] = buf[m++];
+      h_uMech[i] = buf[m++];
+      h_uChem[i] = buf[m++];
+    }
+  } else {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_v(i,0) = buf[m++];
+      h_v(i,1) = buf[m++];
+      h_v(i,2) = buf[m++];
+      h_image[i] = (imageint) ubuf(buf[m++]).i;
+      h_dpdTheta[i] = buf[m++];
+      h_uCond[i] = buf[m++];
+      h_uMech[i] = buf[m++];
+      h_uChem[i] = buf[m++];
+    }
   }
 
-  atomKK->modified(Host,X_MASK|V_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK);
+  auto mod_mask = X_MASK|V_MASK|DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -882,20 +1022,39 @@ int AtomVecDPDKokkos::pack_border(int n, int *list, double *buf,
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = ubuf(h_tag(j)).d;
-      buf[m++] = ubuf(h_type(j)).d;
-      buf[m++] = ubuf(h_mask(j)).d;
-      buf[m++] = h_dpdTheta(j);
-      buf[m++] = h_uCond(j);
-      buf[m++] = h_uMech(j);
-      buf[m++] = h_uChem(j);
-      buf[m++] = h_uCG(j);
-      buf[m++] = h_uCGnew(j);
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = ubuf(h_tag(j)).d;
+        buf[m++] = ubuf(h_type(j)).d;
+        buf[m++] = ubuf(h_mask(j)).d;
+        buf[m++] = h_dpdTheta(j);
+        buf[m++] = h_uCond(j);
+        buf[m++] = h_uMech(j);
+        buf[m++] = h_uChem(j);
+        buf[m++] = h_uCG(j);
+        buf[m++] = h_uCGnew(j);
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = ubuf(h_tag(j)).d;
+        buf[m++] = ubuf(h_type(j)).d;
+        buf[m++] = ubuf(h_mask(j)).d;
+        buf[m++] = ubuf(h_image(j)).d;
+        buf[m++] = h_dpdTheta(j);
+        buf[m++] = h_uCond(j);
+        buf[m++] = h_uMech(j);
+        buf[m++] = h_uChem(j);
+        buf[m++] = h_uCG(j);
+        buf[m++] = h_uCGnew(j);
+      }
     }
   } else {
     if (domain->triclinic == 0) {
@@ -907,20 +1066,45 @@ int AtomVecDPDKokkos::pack_border(int n, int *list, double *buf,
       dy = pbc[1];
       dz = pbc[2];
     }
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0) + dx;
-      buf[m++] = h_x(j,1) + dy;
-      buf[m++] = h_x(j,2) + dz;
-      buf[m++] = ubuf(h_tag(j)).d;
-      buf[m++] = ubuf(h_type(j)).d;
-      buf[m++] = ubuf(h_mask(j)).d;
-      buf[m++] = h_dpdTheta(j);
-      buf[m++] = h_uCond(j);
-      buf[m++] = h_uMech(j);
-      buf[m++] = h_uChem(j);
-      buf[m++] = h_uCG(j);
-      buf[m++] = h_uCGnew(j);
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0) + dx;
+        buf[m++] = h_x(j,1) + dy;
+        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = ubuf(h_tag(j)).d;
+        buf[m++] = ubuf(h_type(j)).d;
+        buf[m++] = ubuf(h_mask(j)).d;
+        buf[m++] = h_dpdTheta(j);
+        buf[m++] = h_uCond(j);
+        buf[m++] = h_uMech(j);
+        buf[m++] = h_uChem(j);
+        buf[m++] = h_uCG(j);
+        buf[m++] = h_uCGnew(j);
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0) + dx;
+        buf[m++] = h_x(j,1) + dy;
+        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = ubuf(h_tag(j)).d;
+        buf[m++] = ubuf(h_type(j)).d;
+        buf[m++] = ubuf(h_mask(j)).d;
+        imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+        imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+        imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+        imageint img = (xi & IMGMASK) |
+          ((yi & IMGMASK) << IMGBITS) |
+          ((zi & IMGMASK) << IMG2BITS);
+        buf[m++] = ubuf(img).d;
+        buf[m++] = h_dpdTheta(j);
+        buf[m++] = h_uCond(j);
+        buf[m++] = h_uMech(j);
+        buf[m++] = h_uChem(j);
+        buf[m++] = h_uCG(j);
+        buf[m++] = h_uCGnew(j);
+      }
     }
   }
 
@@ -943,40 +1127,12 @@ int AtomVecDPDKokkos::pack_border_vel(int n, int *list, double *buf,
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = ubuf(h_tag(j)).d;
-      buf[m++] = ubuf(h_type(j)).d;
-      buf[m++] = ubuf(h_mask(j)).d;
-      buf[m++] = h_v(j,0);
-      buf[m++] = h_v(j,1);
-      buf[m++] = h_v(j,2);
-      buf[m++] = h_dpdTheta(j);
-      buf[m++] = h_uCond(j);
-      buf[m++] = h_uMech(j);
-      buf[m++] = h_uChem(j);
-      buf[m++] = h_uCG(j);
-      buf[m++] = h_uCGnew(j);
-    }
-  } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0];
-      dy = pbc[1];
-      dz = pbc[2];
-    }
-    if (!deform_vremap) {
+    if (comm_images == 0) {
       for (i = 0; i < n; i++) {
         j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
         buf[m++] = ubuf(h_tag(j)).d;
         buf[m++] = ubuf(h_type(j)).d;
         buf[m++] = ubuf(h_mask(j)).d;
@@ -991,32 +1147,144 @@ int AtomVecDPDKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = h_uCGnew(j);
       }
     } else {
-      dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
-      dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
-      dvz = pbc[2]*h_rate[2];
       for (i = 0; i < n; i++) {
         j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
         buf[m++] = ubuf(h_tag(j)).d;
         buf[m++] = ubuf(h_type(j)).d;
         buf[m++] = ubuf(h_mask(j)).d;
-        if (mask[i] & deform_groupbit) {
-          buf[m++] = h_v(j,0) + dvx;
-          buf[m++] = h_v(j,1) + dvy;
-          buf[m++] = h_v(j,2) + dvz;
-        } else {
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
-        }
+        buf[m++] = ubuf(h_image(j)).d;
+        buf[m++] = h_v(j,0);
+        buf[m++] = h_v(j,1);
+        buf[m++] = h_v(j,2);
         buf[m++] = h_dpdTheta(j);
         buf[m++] = h_uCond(j);
         buf[m++] = h_uMech(j);
         buf[m++] = h_uChem(j);
         buf[m++] = h_uCG(j);
         buf[m++] = h_uCGnew(j);
+      }
+    }
+  } else {
+    if (domain->triclinic == 0) {
+      dx = pbc[0]*domain->xprd;
+      dy = pbc[1]*domain->yprd;
+      dz = pbc[2]*domain->zprd;
+    } else {
+      dx = pbc[0];
+      dy = pbc[1];
+      dz = pbc[2];
+    }
+    if (!deform_vremap) {
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag(j)).d;
+          buf[m++] = ubuf(h_type(j)).d;
+          buf[m++] = ubuf(h_mask(j)).d;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_dpdTheta(j);
+          buf[m++] = h_uCond(j);
+          buf[m++] = h_uMech(j);
+          buf[m++] = h_uChem(j);
+          buf[m++] = h_uCG(j);
+          buf[m++] = h_uCGnew(j);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag(j)).d;
+          buf[m++] = ubuf(h_type(j)).d;
+          buf[m++] = ubuf(h_mask(j)).d;
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_dpdTheta(j);
+          buf[m++] = h_uCond(j);
+          buf[m++] = h_uMech(j);
+          buf[m++] = h_uChem(j);
+          buf[m++] = h_uCG(j);
+          buf[m++] = h_uCGnew(j);
+        }
+      }
+    } else {
+      dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
+      dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
+      dvz = pbc[2]*h_rate[2];
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag(j)).d;
+          buf[m++] = ubuf(h_type(j)).d;
+          buf[m++] = ubuf(h_mask(j)).d;
+          if (mask[i] & deform_groupbit) {
+            buf[m++] = h_v(j,0) + dvx;
+            buf[m++] = h_v(j,1) + dvy;
+            buf[m++] = h_v(j,2) + dvz;
+          } else {
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+          }
+          buf[m++] = h_dpdTheta(j);
+          buf[m++] = h_uCond(j);
+          buf[m++] = h_uMech(j);
+          buf[m++] = h_uChem(j);
+          buf[m++] = h_uCG(j);
+          buf[m++] = h_uCGnew(j);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag(j)).d;
+          buf[m++] = ubuf(h_type(j)).d;
+          buf[m++] = ubuf(h_mask(j)).d;
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+          if (mask[i] & deform_groupbit) {
+            buf[m++] = h_v(j,0) + dvx;
+            buf[m++] = h_v(j,1) + dvy;
+            buf[m++] = h_v(j,2) + dvz;
+          } else {
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+          }
+          buf[m++] = h_dpdTheta(j);
+          buf[m++] = h_uCond(j);
+          buf[m++] = h_uMech(j);
+          buf[m++] = h_uChem(j);
+          buf[m++] = h_uCG(j);
+          buf[m++] = h_uCGnew(j);
+        }
       }
     }
   }
@@ -1161,19 +1429,37 @@ void AtomVecDPDKokkos::unpack_border(int n, int first, double *buf)
   last = first + n;
   while (last > nmax) grow(0);
 
-  for (i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
-    h_type(i) = (int) ubuf(buf[m++]).i;
-    h_mask(i) = (int) ubuf(buf[m++]).i;
-    h_dpdTheta(i) = buf[m++];
-    h_uCond(i) = buf[m++];
-    h_uMech(i) = buf[m++];
-    h_uChem(i) = buf[m++];
-    h_uCG(i) = buf[m++];
-    h_uCGnew(i) = buf[m++];
+  if (comm_images == 0) {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
+      h_type(i) = (int) ubuf(buf[m++]).i;
+      h_mask(i) = (int) ubuf(buf[m++]).i;
+      h_dpdTheta(i) = buf[m++];
+      h_uCond(i) = buf[m++];
+      h_uMech(i) = buf[m++];
+      h_uChem(i) = buf[m++];
+      h_uCG(i) = buf[m++];
+      h_uCGnew(i) = buf[m++];
+    }
+  } else {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
+      h_type(i) = (int) ubuf(buf[m++]).i;
+      h_mask(i) = (int) ubuf(buf[m++]).i;
+      h_image(i) = (imageint) ubuf(buf[m++]).i;
+      h_dpdTheta(i) = buf[m++];
+      h_uCond(i) = buf[m++];
+      h_uMech(i) = buf[m++];
+      h_uChem(i) = buf[m++];
+      h_uCG(i) = buf[m++];
+      h_uCGnew(i) = buf[m++];
+    }
   }
 
   if (atom->nextra_border)
@@ -1181,9 +1467,11 @@ void AtomVecDPDKokkos::unpack_border(int n, int first, double *buf)
       m += modify->fix[atom->extra_border[iextra]]->
         unpack_border(n,first,&buf[m]);
 
-  atomKK->modified(Host,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|
                 DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK|
-                UCG_MASK|UCGNEW_MASK|DVECTOR_MASK);
+                UCG_MASK|UCGNEW_MASK|DVECTOR_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1196,22 +1484,43 @@ void AtomVecDPDKokkos::unpack_border_vel(int n, int first, double *buf)
   last = first + n;
   while (last > nmax) grow(0);
 
-  for (i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
-    h_type(i) = (int) ubuf(buf[m++]).i;
-    h_mask(i) = (int) ubuf(buf[m++]).i;
-    h_v(i,0) = buf[m++];
-    h_v(i,1) = buf[m++];
-    h_v(i,2) = buf[m++];
-    h_dpdTheta(i) = buf[m++];
-    h_uCond(i) = buf[m++];
-    h_uMech(i) = buf[m++];
-    h_uChem(i) = buf[m++];
-    h_uCG(i) = buf[m++];
-    h_uCGnew(i) = buf[m++];
+  if (comm_images == 0) {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
+      h_type(i) = (int) ubuf(buf[m++]).i;
+      h_mask(i) = (int) ubuf(buf[m++]).i;
+      h_v(i,0) = buf[m++];
+      h_v(i,1) = buf[m++];
+      h_v(i,2) = buf[m++];
+      h_dpdTheta(i) = buf[m++];
+      h_uCond(i) = buf[m++];
+      h_uMech(i) = buf[m++];
+      h_uChem(i) = buf[m++];
+      h_uCG(i) = buf[m++];
+      h_uCGnew(i) = buf[m++];
+    }
+  } else {
+    for (i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
+      h_type(i) = (int) ubuf(buf[m++]).i;
+      h_mask(i) = (int) ubuf(buf[m++]).i;
+      h_image(i) = (imageint) ubuf(buf[m++]).i;
+      h_v(i,0) = buf[m++];
+      h_v(i,1) = buf[m++];
+      h_v(i,2) = buf[m++];
+      h_dpdTheta(i) = buf[m++];
+      h_uCond(i) = buf[m++];
+      h_uMech(i) = buf[m++];
+      h_uChem(i) = buf[m++];
+      h_uCG(i) = buf[m++];
+      h_uCGnew(i) = buf[m++];
+    }
   }
 
   if (atom->nextra_border)
@@ -1219,9 +1528,11 @@ void AtomVecDPDKokkos::unpack_border_vel(int n, int first, double *buf)
       m += modify->fix[atom->extra_border[iextra]]->
         unpack_border(n,first,&buf[m]);
 
-  atomKK->modified(Host,X_MASK|V_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|
+  auto mod_mask = X_MASK|V_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|
                 DPDTHETA_MASK|UCOND_MASK|UMECH_MASK|UCHEM_MASK|
-                UCG_MASK|UCGNEW_MASK|DVECTOR_MASK);
+                UCG_MASK|UCGNEW_MASK|DVECTOR_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 }
 
 /* ---------------------------------------------------------------------- */

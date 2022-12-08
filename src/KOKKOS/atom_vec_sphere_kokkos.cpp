@@ -1044,14 +1044,26 @@ int AtomVecSphereKokkos::pack_comm(int n, int *list, double *buf,
 
   if (radvary == 0) {
     // Not sure if we need to call sync for X here
-    atomKK->sync(Host,X_MASK);
+    auto sync_mask = X_MASK;
+    if (comm_images) sync_mask |= IMAGE_MASK;
+    atomKK->sync(Host,sync_mask);
     m = 0;
     if (pbc_flag == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = ubuf(h_image(j)).d;
+        }
       }
     } else {
       if (domain->triclinic == 0) {
@@ -1063,24 +1075,54 @@ int AtomVecSphereKokkos::pack_comm(int n, int *list, double *buf,
         dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
         dz = pbc[2]*domain->zprd;
       }
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+        }
       }
     }
   } else {
-    atomKK->sync(Host,X_MASK|RADIUS_MASK|RMASS_MASK);
+    auto sync_mask = X_MASK|RADIUS_MASK|RMASS_MASK;
+    if (comm_images) sync_mask |= IMAGE_MASK;
+    atomKK->sync(Host,sync_mask);
     m = 0;
     if (pbc_flag == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-        buf[m++] = h_radius[j];
-        buf[m++] = h_rmass[j];
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          buf[m++] = ubuf(h_image(j)).d;
+        }
       }
     } else {
       if (domain->triclinic == 0) {
@@ -1092,13 +1134,31 @@ int AtomVecSphereKokkos::pack_comm(int n, int *list, double *buf,
         dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
         dz = pbc[2]*domain->zprd;
       }
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = h_radius[j];
-        buf[m++] = h_rmass[j];
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+        }
       }
     }
   }
@@ -1115,20 +1175,38 @@ int AtomVecSphereKokkos::pack_comm_vel(int n, int *list, double *buf,
   double dx,dy,dz,dvx,dvy,dvz;
 
   if (radvary == 0) {
-    atomKK->sync(Host,X_MASK|V_MASK|OMEGA_MASK);
+    auto sync_mask = X_MASK|V_MASK|OMEGA_MASK;
+    if (comm_images) sync_mask |= IMAGE_MASK;
+    atomKK->sync(Host,sync_mask);
     m = 0;
     if (pbc_flag == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-        buf[m++] = h_v(j,0);
-        buf[m++] = h_v(j,1);
-        buf[m++] = h_v(j,2);
-        buf[m++] = h_omega(j,0);
-        buf[m++] = h_omega(j,1);
-        buf[m++] = h_omega(j,2);
+      if (comm_images == 0)  {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+          buf[m++] = ubuf(h_image(j)).d;
+        }
       }
     } else {
       if (domain->triclinic == 0) {
@@ -1141,59 +1219,129 @@ int AtomVecSphereKokkos::pack_comm_vel(int n, int *list, double *buf,
         dz = pbc[2]*domain->zprd;
       }
       if (!deform_vremap) {
-        for (i = 0; i < n; i++) {
-          j = list[i];
-          buf[m++] = h_x(j,0) + dx;
-          buf[m++] = h_x(j,1) + dy;
-          buf[m++] = h_x(j,2) + dz;
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
+        if (comm_images == 0) {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
+          }
+        } else {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
+            imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+            imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+            imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+            imageint img = (xi & IMGMASK) |
+              ((yi & IMGMASK) << IMGBITS) |
+              ((zi & IMGMASK) << IMG2BITS);
+            buf[m++] = ubuf(img).d;
+          }
         }
       } else {
         dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
         dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
         dvz = pbc[2]*h_rate[2];
-        for (i = 0; i < n; i++) {
-          j = list[i];
-          buf[m++] = h_x(j,0) + dx;
-          buf[m++] = h_x(j,1) + dy;
-          buf[m++] = h_x(j,2) + dz;
-         if (mask[i] & deform_groupbit) {
-            buf[m++] = h_v(j,0) + dvx;
-            buf[m++] = h_v(j,1) + dvy;
-            buf[m++] = h_v(j,2) + dvz;
-          } else {
-            buf[m++] = h_v(j,0);
-            buf[m++] = h_v(j,1);
-            buf[m++] = h_v(j,2);
+        if (comm_images == 0) {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+           if (mask[i] & deform_groupbit) {
+              buf[m++] = h_v(j,0) + dvx;
+              buf[m++] = h_v(j,1) + dvy;
+              buf[m++] = h_v(j,2) + dvz;
+            } else {
+              buf[m++] = h_v(j,0);
+              buf[m++] = h_v(j,1);
+              buf[m++] = h_v(j,2);
+            }
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
           }
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
+        } else {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+           if (mask[i] & deform_groupbit) {
+              buf[m++] = h_v(j,0) + dvx;
+              buf[m++] = h_v(j,1) + dvy;
+              buf[m++] = h_v(j,2) + dvz;
+            } else {
+              buf[m++] = h_v(j,0);
+              buf[m++] = h_v(j,1);
+              buf[m++] = h_v(j,2);
+            }
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
+            imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+            imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+            imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+            imageint img = (xi & IMGMASK) |
+              ((yi & IMGMASK) << IMGBITS) |
+              ((zi & IMGMASK) << IMG2BITS);
+            buf[m++] = ubuf(img).d;
+          }
         }
       }
     }
   } else {
-    atomKK->sync(Host,X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK);
+    auto sync_mask = X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK;
+    if (comm_images) sync_mask |= IMAGE_MASK;
+    atomKK->sync(Host,sync_mask);
     m = 0;
     if (pbc_flag == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-        buf[m++] = h_radius[j];
-        buf[m++] = h_rmass[j];
-        buf[m++] = h_v(j,0);
-        buf[m++] = h_v(j,1);
-        buf[m++] = h_v(j,2);
-        buf[m++] = h_omega(j,0);
-        buf[m++] = h_omega(j,1);
-        buf[m++] = h_omega(j,2);
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0);
+          buf[m++] = h_x(j,1);
+          buf[m++] = h_x(j,2);
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+          buf[m++] = ubuf(h_image(j)).d;
+        }
       }
     } else {
       if (domain->triclinic == 0) {
@@ -1206,43 +1354,97 @@ int AtomVecSphereKokkos::pack_comm_vel(int n, int *list, double *buf,
         dz = pbc[2]*domain->zprd;
       }
       if (!deform_vremap) {
-        for (i = 0; i < n; i++) {
-          j = list[i];
-          buf[m++] = h_x(j,0) + dx;
-          buf[m++] = h_x(j,1) + dy;
-          buf[m++] = h_x(j,2) + dz;
-          buf[m++] = h_radius[j];
-          buf[m++] = h_rmass[j];
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
+        if (comm_images == 0) {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+            buf[m++] = h_radius[j];
+            buf[m++] = h_rmass[j];
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
+          }
+        } else {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+            buf[m++] = h_radius[j];
+            buf[m++] = h_rmass[j];
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
+            imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+            imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+            imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+            imageint img = (xi & IMGMASK) |
+              ((yi & IMGMASK) << IMGBITS) |
+              ((zi & IMGMASK) << IMG2BITS);
+            buf[m++] = ubuf(img).d;
+          }
         }
       } else {
         dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
         dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
         dvz = pbc[2]*h_rate[2];
-        for (i = 0; i < n; i++) {
-          j = list[i];
-          buf[m++] = h_x(j,0) + dx;
-          buf[m++] = h_x(j,1) + dy;
-          buf[m++] = h_x(j,2) + dz;
-          buf[m++] = h_radius[j];
-          buf[m++] = h_rmass[j];
-          if (mask[i] & deform_groupbit) {
-            buf[m++] = h_v(j,0) + dvx;
-            buf[m++] = h_v(j,1) + dvy;
-            buf[m++] = h_v(j,2) + dvz;
-          } else {
-            buf[m++] = h_v(j,0);
-            buf[m++] = h_v(j,1);
-            buf[m++] = h_v(j,2);
+        if (comm_images == 0) {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+            buf[m++] = h_radius[j];
+            buf[m++] = h_rmass[j];
+            if (mask[i] & deform_groupbit) {
+              buf[m++] = h_v(j,0) + dvx;
+              buf[m++] = h_v(j,1) + dvy;
+              buf[m++] = h_v(j,2) + dvz;
+            } else {
+              buf[m++] = h_v(j,0);
+              buf[m++] = h_v(j,1);
+              buf[m++] = h_v(j,2);
+            }
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
           }
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
+        } else {
+          for (i = 0; i < n; i++) {
+            j = list[i];
+            buf[m++] = h_x(j,0) + dx;
+            buf[m++] = h_x(j,1) + dy;
+            buf[m++] = h_x(j,2) + dz;
+            buf[m++] = h_radius[j];
+            buf[m++] = h_rmass[j];
+            if (mask[i] & deform_groupbit) {
+              buf[m++] = h_v(j,0) + dvx;
+              buf[m++] = h_v(j,1) + dvy;
+              buf[m++] = h_v(j,2) + dvz;
+            } else {
+              buf[m++] = h_v(j,0);
+              buf[m++] = h_v(j,1);
+              buf[m++] = h_v(j,2);
+            }
+            buf[m++] = h_omega(j,0);
+            buf[m++] = h_omega(j,1);
+            buf[m++] = h_omega(j,2);
+            imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+            imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+            imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+            imageint img = (xi & IMGMASK) |
+              ((yi & IMGMASK) << IMGBITS) |
+              ((zi & IMGMASK) << IMG2BITS);
+            buf[m++] = ubuf(img).d;
+          }
         }
       }
     }
@@ -1275,23 +1477,47 @@ void AtomVecSphereKokkos::unpack_comm(int n, int first, double *buf)
   if (radvary == 0) {
     int m = 0;
     const int last = first + n;
-    for (int i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
+    if (comm_images == 0) {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+      }
+    } else {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_image(i) = (imageint) ubuf(buf[m++]).i;
+      }
     }
-    atomKK->modified(Host,X_MASK);
+    auto mod_mask = X_MASK;
+    if (comm_images) mod_mask |= IMAGE_MASK;
+    atomKK->modified(Host,mod_mask);
   } else {
     int m = 0;
     const int last = first + n;
-    for (int i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-      h_radius[i] = buf[m++];
-      h_rmass[i] = buf[m++];
+    if (comm_images == 0) {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_radius[i] = buf[m++];
+        h_rmass[i] = buf[m++];
+      }
+    } else {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_radius[i] = buf[m++];
+        h_rmass[i] = buf[m++];
+        h_image[i] = (imageint) ubuf(buf[m++]).i;
+      }
     }
-    atomKK->modified(Host,X_MASK|RADIUS_MASK|RMASS_MASK);
+    auto mod_mask = X_MASK|RADIUS_MASK|RMASS_MASK;
+    if (comm_images) mod_mask |= IMAGE_MASK;
+    atomKK->modified(Host,mod_mask);
   }
 }
 
@@ -1302,35 +1528,71 @@ void AtomVecSphereKokkos::unpack_comm_vel(int n, int first, double *buf)
   if (radvary == 0) {
     int m = 0;
     const int last = first + n;
-    for (int i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-      h_v(i,0) = buf[m++];
-      h_v(i,1) = buf[m++];
-      h_v(i,2) = buf[m++];
-      h_omega(i,0) = buf[m++];
-      h_omega(i,1) = buf[m++];
-      h_omega(i,2) = buf[m++];
+    if (comm_images == 0) {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_v(i,0) = buf[m++];
+        h_v(i,1) = buf[m++];
+        h_v(i,2) = buf[m++];
+        h_omega(i,0) = buf[m++];
+        h_omega(i,1) = buf[m++];
+        h_omega(i,2) = buf[m++];
+      }
+    } else {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_v(i,0) = buf[m++];
+        h_v(i,1) = buf[m++];
+        h_v(i,2) = buf[m++];
+        h_omega(i,0) = buf[m++];
+        h_omega(i,1) = buf[m++];
+        h_omega(i,2) = buf[m++];
+        h_image(i) = (imageint) ubuf(buf[m++]).i;
+      }
     }
-    atomKK->modified(Host,X_MASK|V_MASK|OMEGA_MASK);
+    auto mod_mask = X_MASK|V_MASK|OMEGA_MASK;
+    if (comm_images) mod_mask |= IMAGE_MASK;
+    atomKK->modified(Host,mod_mask);
   } else {
     int m = 0;
     const int last = first + n;
-    for (int i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-      h_radius[i] = buf[m++];
-      h_rmass[i] = buf[m++];
-      h_v(i,0) = buf[m++];
-      h_v(i,1) = buf[m++];
-      h_v(i,2) = buf[m++];
-      h_omega(i,0) = buf[m++];
-      h_omega(i,1) = buf[m++];
-      h_omega(i,2) = buf[m++];
+    if (comm_images == 0) {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_radius[i] = buf[m++];
+        h_rmass[i] = buf[m++];
+        h_v(i,0) = buf[m++];
+        h_v(i,1) = buf[m++];
+        h_v(i,2) = buf[m++];
+        h_omega(i,0) = buf[m++];
+        h_omega(i,1) = buf[m++];
+        h_omega(i,2) = buf[m++];
+      }
+    } else {
+      for (int i = first; i < last; i++) {
+        h_x(i,0) = buf[m++];
+        h_x(i,1) = buf[m++];
+        h_x(i,2) = buf[m++];
+        h_radius[i] = buf[m++];
+        h_rmass[i] = buf[m++];
+        h_v(i,0) = buf[m++];
+        h_v(i,1) = buf[m++];
+        h_v(i,2) = buf[m++];
+        h_omega(i,0) = buf[m++];
+        h_omega(i,1) = buf[m++];
+        h_omega(i,2) = buf[m++];
+        h_image(i) = (imageint) ubuf(buf[m++]).i;
+      }
     }
-    atomKK->modified(Host,X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK);
+    auto mod_mask = X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK;
+    if (comm_images) mod_mask |= IMAGE_MASK;
+    atomKK->modified(Host,mod_mask);
   }
 }
 
@@ -1553,16 +1815,31 @@ int AtomVecSphereKokkos::pack_border(
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = ubuf(h_tag[j]).d;
-      buf[m++] = ubuf(h_type[j]).d;
-      buf[m++] = ubuf(h_mask[j]).d;
-      buf[m++] = h_radius[j];
-      buf[m++] = h_rmass[j];
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = ubuf(h_tag[j]).d;
+        buf[m++] = ubuf(h_type[j]).d;
+        buf[m++] = ubuf(h_mask[j]).d;
+        buf[m++] = h_radius[j];
+        buf[m++] = h_rmass[j];
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
+        buf[m++] = ubuf(h_tag[j]).d;
+        buf[m++] = ubuf(h_type[j]).d;
+        buf[m++] = ubuf(h_mask[j]).d;
+        buf[m++] = ubuf(h_image(j)).d;
+        buf[m++] = h_radius[j];
+        buf[m++] = h_rmass[j];
+      }
     }
   } else {
     if (domain->triclinic == 0) {
@@ -1574,16 +1851,37 @@ int AtomVecSphereKokkos::pack_border(
       dy = pbc[1];
       dz = pbc[2];
     }
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0) + dx;
-      buf[m++] = h_x(j,1) + dy;
-      buf[m++] = h_x(j,2) + dz;
-      buf[m++] = ubuf(h_tag[j]).d;
-      buf[m++] = ubuf(h_type[j]).d;
-      buf[m++] = ubuf(h_mask[j]).d;
-      buf[m++] = h_radius[j];
-      buf[m++] = h_rmass[j];
+    if (comm_images == 0) {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0) + dx;
+        buf[m++] = h_x(j,1) + dy;
+        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = ubuf(h_tag[j]).d;
+        buf[m++] = ubuf(h_type[j]).d;
+        buf[m++] = ubuf(h_mask[j]).d;
+        buf[m++] = h_radius[j];
+        buf[m++] = h_rmass[j];
+      }
+    } else {
+      for (i = 0; i < n; i++) {
+        j = list[i];
+        buf[m++] = h_x(j,0) + dx;
+        buf[m++] = h_x(j,1) + dy;
+        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = ubuf(h_tag[j]).d;
+        buf[m++] = ubuf(h_type[j]).d;
+        buf[m++] = ubuf(h_mask[j]).d;
+        imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+        imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+        imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+        imageint img = (xi & IMGMASK) |
+          ((yi & IMGMASK) << IMGBITS) |
+          ((zi & IMGMASK) << IMG2BITS);
+        buf[m++] = ubuf(img).d;
+        buf[m++] = h_radius[j];
+        buf[m++] = h_rmass[j];
+      }
     }
   }
 
@@ -1780,39 +2078,12 @@ int AtomVecSphereKokkos::pack_border_vel(int n, int *list, double *buf,
 
   m = 0;
   if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = ubuf(h_tag[j]).d;
-      buf[m++] = ubuf(h_type[j]).d;
-      buf[m++] = ubuf(h_mask[j]).d;
-      buf[m++] = h_radius[j];
-      buf[m++] = h_rmass[j];
-      buf[m++] = h_v(j,0);
-      buf[m++] = h_v(j,1);
-      buf[m++] = h_v(j,2);
-      buf[m++] = h_omega(j,0);
-      buf[m++] = h_omega(j,1);
-      buf[m++] = h_omega(j,2);
-    }
-  } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0];
-      dy = pbc[1];
-      dz = pbc[2];
-    }
-    if (!deform_vremap) {
+    if (comm_images == 0) {
       for (i = 0; i < n; i++) {
         j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
         buf[m++] = ubuf(h_tag[j]).d;
         buf[m++] = ubuf(h_type[j]).d;
         buf[m++] = ubuf(h_mask[j]).d;
@@ -1826,31 +2097,139 @@ int AtomVecSphereKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = h_omega(j,2);
       }
     } else {
-      dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
-      dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
-      dvz = pbc[2]*h_rate[2];
       for (i = 0; i < n; i++) {
         j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
+        buf[m++] = h_x(j,0);
+        buf[m++] = h_x(j,1);
+        buf[m++] = h_x(j,2);
         buf[m++] = ubuf(h_tag[j]).d;
         buf[m++] = ubuf(h_type[j]).d;
         buf[m++] = ubuf(h_mask[j]).d;
+        buf[m++] = ubuf(h_image[j]).d;
         buf[m++] = h_radius[j];
         buf[m++] = h_rmass[j];
-        if (mask[i] & deform_groupbit) {
-          buf[m++] = h_v(j,0) + dvx;
-          buf[m++] = h_v(j,1) + dvy;
-          buf[m++] = h_v(j,2) + dvz;
-        } else {
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
-        }
+        buf[m++] = h_v(j,0);
+        buf[m++] = h_v(j,1);
+        buf[m++] = h_v(j,2);
         buf[m++] = h_omega(j,0);
         buf[m++] = h_omega(j,1);
         buf[m++] = h_omega(j,2);
+      }
+    }
+  } else {
+    if (domain->triclinic == 0) {
+      dx = pbc[0]*domain->xprd;
+      dy = pbc[1]*domain->yprd;
+      dz = pbc[2]*domain->zprd;
+    } else {
+      dx = pbc[0];
+      dy = pbc[1];
+      dz = pbc[2];
+    }
+    if (!deform_vremap) {
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag[j]).d;
+          buf[m++] = ubuf(h_type[j]).d;
+          buf[m++] = ubuf(h_mask[j]).d;
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+        }
+      } else{
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag[j]).d;
+          buf[m++] = ubuf(h_type[j]).d;
+          buf[m++] = ubuf(h_mask[j]).d;
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+        }
+      }
+    } else {
+      dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
+      dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
+      dvz = pbc[2]*h_rate[2];
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag[j]).d;
+          buf[m++] = ubuf(h_type[j]).d;
+          buf[m++] = ubuf(h_mask[j]).d;
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          if (mask[i] & deform_groupbit) {
+            buf[m++] = h_v(j,0) + dvx;
+            buf[m++] = h_v(j,1) + dvy;
+            buf[m++] = h_v(j,2) + dvz;
+          } else {
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+          }
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = ubuf(h_tag[j]).d;
+          buf[m++] = ubuf(h_type[j]).d;
+          buf[m++] = ubuf(h_mask[j]).d;
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+          buf[m++] = h_radius[j];
+          buf[m++] = h_rmass[j];
+          if (mask[i] & deform_groupbit) {
+            buf[m++] = h_v(j,0) + dvx;
+            buf[m++] = h_v(j,1) + dvy;
+            buf[m++] = h_v(j,2) + dvz;
+          } else {
+            buf[m++] = h_v(j,0);
+            buf[m++] = h_v(j,1);
+            buf[m++] = h_v(j,2);
+          }
+          buf[m++] = h_omega(j,0);
+          buf[m++] = h_omega(j,1);
+          buf[m++] = h_omega(j,2);
+        }
       }
     }
   }
@@ -1954,18 +2333,34 @@ void AtomVecSphereKokkos::unpack_border(int n, int first, double *buf)
   const int last = first + n;
   while (last > nmax) grow(0);
 
-  for (int i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_tag[i] = (tagint) ubuf(buf[m++]).i;
-    h_type[i] = (int) ubuf(buf[m++]).i;
-    h_mask[i] = (int) ubuf(buf[m++]).i;
-    h_radius[i] = buf[m++];
-    h_rmass[i] = buf[m++];
+  if (comm_images == 0) {
+    for (int i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag[i] = (tagint) ubuf(buf[m++]).i;
+      h_type[i] = (int) ubuf(buf[m++]).i;
+      h_mask[i] = (int) ubuf(buf[m++]).i;
+      h_radius[i] = buf[m++];
+      h_rmass[i] = buf[m++];
+    }
+  } else {
+    for (int i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag[i] = (tagint) ubuf(buf[m++]).i;
+      h_type[i] = (int) ubuf(buf[m++]).i;
+      h_mask[i] = (int) ubuf(buf[m++]).i;
+      h_image[i] = (imageint) ubuf(buf[m++]).i;
+      h_radius[i] = buf[m++];
+      h_rmass[i] = buf[m++];
+    }
   }
 
-  atomKK->modified(Host,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|RADIUS_MASK|RMASS_MASK);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|RADIUS_MASK|RMASS_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   if (atom->nextra_border)
     for (int iextra = 0; iextra < atom->nextra_border; iextra++)
@@ -2065,24 +2460,46 @@ void AtomVecSphereKokkos::unpack_border_vel(int n, int first, double *buf)
   const int last = first + n;
   while (last > nmax) grow(0);
 
-  for (int i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_tag[i] = (tagint) ubuf(buf[m++]).i;
-    h_type[i] = (int) ubuf(buf[m++]).i;
-    h_mask[i] = (int) ubuf(buf[m++]).i;
-    h_radius[i] = buf[m++];
-    h_rmass[i] = buf[m++];
-    h_v(i,0) = buf[m++];
-    h_v(i,1) = buf[m++];
-    h_v(i,2) = buf[m++];
-    h_omega(i,0) = buf[m++];
-    h_omega(i,1) = buf[m++];
-    h_omega(i,2) = buf[m++];
+  if (comm_images == 0) {
+    for (int i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag[i] = (tagint) ubuf(buf[m++]).i;
+      h_type[i] = (int) ubuf(buf[m++]).i;
+      h_mask[i] = (int) ubuf(buf[m++]).i;
+      h_radius[i] = buf[m++];
+      h_rmass[i] = buf[m++];
+      h_v(i,0) = buf[m++];
+      h_v(i,1) = buf[m++];
+      h_v(i,2) = buf[m++];
+      h_omega(i,0) = buf[m++];
+      h_omega(i,1) = buf[m++];
+      h_omega(i,2) = buf[m++];
+    }
+  } else {
+    for (int i = first; i < last; i++) {
+      h_x(i,0) = buf[m++];
+      h_x(i,1) = buf[m++];
+      h_x(i,2) = buf[m++];
+      h_tag[i] = (tagint) ubuf(buf[m++]).i;
+      h_type[i] = (int) ubuf(buf[m++]).i;
+      h_mask[i] = (int) ubuf(buf[m++]).i;
+      h_image[i] = (imageint) ubuf(buf[m++]).i;
+      h_radius[i] = buf[m++];
+      h_rmass[i] = buf[m++];
+      h_v(i,0) = buf[m++];
+      h_v(i,1) = buf[m++];
+      h_v(i,2) = buf[m++];
+      h_omega(i,0) = buf[m++];
+      h_omega(i,1) = buf[m++];
+      h_omega(i,2) = buf[m++];
+    }
   }
 
-  atomKK->modified(Host,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK);
+  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK;
+  if (comm_images) mod_mask |= IMAGE_MASK;
+  atomKK->modified(Host,mod_mask);
 
   if (atom->nextra_border)
     for (int iextra = 0; iextra < atom->nextra_border; iextra++)

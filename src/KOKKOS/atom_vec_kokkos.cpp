@@ -1246,14 +1246,33 @@ int AtomVecKokkos::pack_comm_vel(int n, int *list, double *buf,
       dz = pbc[2]*domain->zprd;
     }
     if (!deform_vremap) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = h_v(j,0);
-        buf[m++] = h_v(j,1);
-        buf[m++] = h_v(j,2);
+      if (comm_images == 0) {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+        }
+      } else {
+        for (i = 0; i < n; i++) {
+          j = list[i];
+          buf[m++] = h_x(j,0) + dx;
+          buf[m++] = h_x(j,1) + dy;
+          buf[m++] = h_x(j,2) + dz;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
+          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
+          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
+        }
       }
     } else {
       dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];

@@ -476,9 +476,9 @@ int AtomVecFullKokkos::pack_border(int n, int *list, double *buf,
         buf[m++] = ubuf(h_tag(j)).d;
         buf[m++] = ubuf(h_type(j)).d;
         buf[m++] = ubuf(h_mask(j)).d;
+        buf[m++] = ubuf(h_image(j)).d;
         buf[m++] = h_q(j);
         buf[m++] = ubuf(h_molecule(j)).d;
-        buf[m++] = ubuf(h_image(j)).d;
       }
     }
   } else {
@@ -512,8 +512,6 @@ int AtomVecFullKokkos::pack_border(int n, int *list, double *buf,
         buf[m++] = ubuf(h_tag(j)).d;
         buf[m++] = ubuf(h_type(j)).d;
         buf[m++] = ubuf(h_mask(j)).d;
-        buf[m++] = h_q(j);
-        buf[m++] = ubuf(h_molecule(j)).d;
         imageint xi = (image[j] & IMGMASK) - pbc[0];
         imageint yi = ((image[j] >> IMGBITS) & IMGMASK) - pbc[1];
         imageint zi = (image[j] >> IMG2BITS) - pbc[2];
@@ -521,6 +519,8 @@ int AtomVecFullKokkos::pack_border(int n, int *list, double *buf,
           ((yi & IMGMASK) << IMGBITS) |
           ((zi & IMGMASK) << IMG2BITS);
         buf[m++] = ubuf(img).d;
+        buf[m++] = h_q(j);
+        buf[m++] = ubuf(h_molecule(j)).d;
       }
     }
   }
@@ -566,12 +566,12 @@ int AtomVecFullKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(h_tag(j)).d;
         buf[m++] = ubuf(h_type(j)).d;
         buf[m++] = ubuf(h_mask(j)).d;
+        buf[m++] = ubuf(h_image(j)).d;
         buf[m++] = h_q(j);
         buf[m++] = ubuf(h_molecule(j)).d;
         buf[m++] = h_v(j,0);
         buf[m++] = h_v(j,1);
         buf[m++] = h_v(j,2);
-        buf[m++] = ubuf(h_image(j)).d;
       }
     }
   } else {
@@ -609,11 +609,6 @@ int AtomVecFullKokkos::pack_border_vel(int n, int *list, double *buf,
           buf[m++] = ubuf(h_tag(j)).d;
           buf[m++] = ubuf(h_type(j)).d;
           buf[m++] = ubuf(h_mask(j)).d;
-          buf[m++] = h_q(j);
-          buf[m++] = ubuf(h_molecule(j)).d;
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
           imageint xi = (image[j] & IMGMASK) - pbc[0];
           imageint yi = ((image[j] >> IMGBITS) & IMGMASK) - pbc[1];
           imageint zi = (image[j] >> IMG2BITS) - pbc[2];
@@ -621,6 +616,11 @@ int AtomVecFullKokkos::pack_border_vel(int n, int *list, double *buf,
             ((yi & IMGMASK) << IMGBITS) |
             ((zi & IMGMASK) << IMG2BITS);
           buf[m++] = ubuf(img).d;
+          buf[m++] = h_q(j);
+          buf[m++] = ubuf(h_molecule(j)).d;
+          buf[m++] = h_v(j,0);
+          buf[m++] = h_v(j,1);
+          buf[m++] = h_v(j,2);
         }
       }
     } else {
@@ -657,6 +657,13 @@ int AtomVecFullKokkos::pack_border_vel(int n, int *list, double *buf,
           buf[m++] = ubuf(h_tag(j)).d;
           buf[m++] = ubuf(h_type(j)).d;
           buf[m++] = ubuf(h_mask(j)).d;
+          imageint xi = (image[j] & IMGMASK) - pbc[0];
+          imageint yi = ((image[j] >> IMGBITS) & IMGMASK) - pbc[1];
+          imageint zi = (image[j] >> IMG2BITS) - pbc[2];
+          imageint img = (xi & IMGMASK) |
+            ((yi & IMGMASK) << IMGBITS) |
+            ((zi & IMGMASK) << IMG2BITS);
+          buf[m++] = ubuf(img).d;
           buf[m++] = h_q(j);
           buf[m++] = ubuf(h_molecule(j)).d;
           if (mask[i] & deform_groupbit) {
@@ -668,13 +675,6 @@ int AtomVecFullKokkos::pack_border_vel(int n, int *list, double *buf,
             buf[m++] = h_v(j,1);
             buf[m++] = h_v(j,2);
           }
-          imageint xi = (image[j] & IMGMASK) - pbc[0];
-          imageint yi = ((image[j] >> IMGBITS) & IMGMASK) - pbc[1];
-          imageint zi = (image[j] >> IMG2BITS) - pbc[2];
-          imageint img = (xi & IMGMASK) |
-            ((yi & IMGMASK) << IMGBITS) |
-            ((zi & IMGMASK) << IMG2BITS);
-          buf[m++] = ubuf(img).d;
         }
       }
     }
@@ -813,9 +813,9 @@ void AtomVecFullKokkos::unpack_border(int n, int first, double *buf)
       h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
       h_type(i) = (int) ubuf(buf[m++]).i;
       h_mask(i) = (int) ubuf(buf[m++]).i;
+      h_image(i) = (imageint) ubuf(buf[m++]).i;
       h_q(i) = buf[m++];
       h_molecule(i) = (tagint) ubuf(buf[m++]).i;
-      h_image(i) = (imageint) ubuf(buf[m++]).i;
     }
   }
 
@@ -861,12 +861,12 @@ void AtomVecFullKokkos::unpack_border_vel(int n, int first, double *buf)
       h_tag(i) =  (tagint)  ubuf(buf[m++]).i;
       h_type(i) = (int) ubuf(buf[m++]).i;
       h_mask(i) = (int) ubuf(buf[m++]).i;
+      h_image(i) = (imageint) ubuf(buf[m++]).i;
       h_q(i) = buf[m++];
       h_molecule(i) = (tagint) ubuf(buf[m++]).i;
       h_v(i,0) = buf[m++];
       h_v(i,1) = buf[m++];
       h_v(i,2) = buf[m++];
-      h_image(i) = (imageint) ubuf(buf[m++]).i;
     }
   }
 
