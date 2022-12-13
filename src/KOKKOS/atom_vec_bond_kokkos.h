@@ -114,6 +114,7 @@ class AtomVecBondKokkos : public AtomVecKokkos {
 
   DAT::tdual_int_1d k_count;
 
+  friend struct AvecKokkosTypes;
 };
 
 }

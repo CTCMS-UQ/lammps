@@ -99,6 +99,8 @@ class AtomVecChargeKokkos : public AtomVecKokkos {
   HAT::t_float_1d h_q;
 
   DAT::tdual_int_1d k_count;
+
+  friend struct AvecKokkosTypes;
 };
 
 }

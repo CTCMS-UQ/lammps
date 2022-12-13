@@ -140,6 +140,8 @@ class AtomVecSphereKokkos : public AtomVecKokkos {
   HAT::t_f_array h_torque;
 
   DAT::tdual_int_1d k_count;
+
+  friend struct AvecKokkosTypes;
 };
 
 }

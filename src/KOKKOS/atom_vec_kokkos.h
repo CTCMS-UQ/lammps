@@ -200,6 +200,8 @@ class AtomVecKokkos : public AtomVec {
       src.template sync<LMPHostType>();
   }
   #endif
+
+  friend struct AvecKokkosTypes;
 };
 
 template<class DeviceType, int PBC_FLAG, bool IMG_FLAG>

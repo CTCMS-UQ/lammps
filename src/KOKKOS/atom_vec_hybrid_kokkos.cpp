@@ -19,6 +19,7 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#include "kokkos_avec_types.h"
 #include "memory_kokkos.h"
 #include "modify.h"
 
@@ -310,68 +311,15 @@ int AtomVecHybridKokkos::unpack_exchange_kokkos(DAT::tdual_xfloat_2d & /*k_buf*/
 int AtomVecHybridKokkos::pack_comm(int n, int *list, double *buf,
                              int pbc_flag, int *pbc)
 {
-  auto sync_mask = X_MASK;
-  if (comm_images) sync_mask |= IMAGE_MASK;
-  atomKK->sync(Host,sync_mask);
+  if (comm_images == 0) atomKK->sync(Host,X_MASK);
+  else atomKK->sync(Host,X_MASK|IMAGE_MASK);
 
-  int i,j,k,m;
-  double dx,dy,dz;
-
-  m = 0;
-  if (pbc_flag == 0) {
-    if (comm_images == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-      }
-    } else {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-        buf[m++] = ubuf(h_image(j)).d;
-      }
-    }
-  } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0]*domain->xprd + pbc[5]*domain->xy + pbc[4]*domain->xz;
-      dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
-      dz = pbc[2]*domain->zprd;
-    }
-    if (comm_images == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-      }
-    } else {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        imageint xi = (h_image(j) & IMGMASK) - pbc[0];
-        imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
-        imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
-        imageint img = (xi & IMGMASK) |
-          ((yi & IMGMASK) << IMGBITS) |
-          ((zi & IMGMASK) << IMG2BITS);
-        buf[m++] = ubuf(img).d;
-      }
-    }
-  }
+  int m = 0;
+  AvecKokkos_pack_comm<X_MASK>(this,m,n,list,buf,pbc_flag,pbc);
 
   // pack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->pack_comm_hybrid(n,list,&buf[m]);
 
   return m;
@@ -382,122 +330,35 @@ int AtomVecHybridKokkos::pack_comm(int n, int *list, double *buf,
 int AtomVecHybridKokkos::pack_comm_vel(int n, int *list, double *buf,
                                  int pbc_flag, int *pbc)
 {
-  auto sync_mask = X_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) sync_mask |= IMAGE_MASK;
-  atomKK->sync(Host,sync_mask);
-
-  int i,j,k,m;
-  double dx,dy,dz,dvx,dvy,dvz;
   int omega_flag = atom->omega_flag;
   int angmom_flag = atom->angmom_flag;
 
-  m = 0;
-  if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = h_v(j,0);
-      buf[m++] = h_v(j,1);
-      buf[m++] = h_v(j,2);
-      if (omega_flag) {
-        buf[m++] = h_omega(j,0);
-        buf[m++] = h_omega(j,1);
-        buf[m++] = h_omega(j,2);
-      }
-      if (angmom_flag) {
-        buf[m++] = h_angmom(j,0);
-        buf[m++] = h_angmom(j,1);
-        buf[m++] = h_angmom(j,2);
-      }
-      if (comm_images) {
-        buf[m++] = ubuf(h_image(j)).d;
-      }
-    }
+  int m = 0;
+  if (omega_flag && angmom_flag) {
+    constexpr auto comm_mask = X_MASK|V_MASK|OMEGA_MASK|ANGMOM_MASK;
+    if (comm_images == 0) atomKK->sync(Host,comm_mask);
+    else atomKK->sync(Host,comm_mask|IMAGE_MASK);
+    AvecKokkos_pack_comm_vel<comm_mask>(this,m,n,list,buf,pbc_flag,pbc);
+  } else if (omega_flag) {
+    constexpr auto comm_mask = X_MASK|V_MASK|OMEGA_MASK;
+    if (comm_images == 0) atomKK->sync(Host,comm_mask);
+    else atomKK->sync(Host,comm_mask|IMAGE_MASK);
+    AvecKokkos_pack_comm_vel<comm_mask>(this,m,n,list,buf,pbc_flag,pbc);
+  } else if (angmom_flag) {
+    constexpr auto comm_mask = X_MASK|V_MASK|ANGMOM_MASK;
+    if (comm_images == 0) atomKK->sync(Host,comm_mask);
+    else atomKK->sync(Host,comm_mask|IMAGE_MASK);
+    AvecKokkos_pack_comm_vel<comm_mask>(this,m,n,list,buf,pbc_flag,pbc);
   } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0]*domain->xprd + pbc[5]*domain->xy + pbc[4]*domain->xz;
-      dy = pbc[1]*domain->yprd + pbc[3]*domain->yz;
-      dz = pbc[2]*domain->zprd;
-    }
-    if (!deform_vremap) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = h_v(j,0);
-        buf[m++] = h_v(j,1);
-        buf[m++] = h_v(j,2);
-        if (omega_flag) {
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
-        }
-        if (angmom_flag) {
-          buf[m++] = h_angmom(j,0);
-          buf[m++] = h_angmom(j,1);
-          buf[m++] = h_angmom(j,2);
-        }
-        if (comm_images) {
-          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
-          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
-          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
-          imageint img = (xi & IMGMASK) |
-            ((yi & IMGMASK) << IMGBITS) |
-            ((zi & IMGMASK) << IMG2BITS);
-          buf[m++] = ubuf(img).d;
-        }
-      }
-    } else {
-      dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
-      dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
-      dvz = pbc[2]*h_rate[2];
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        if (h_mask[i] & deform_groupbit) {
-          buf[m++] = h_v(j,0) + dvx;
-          buf[m++] = h_v(j,1) + dvy;
-          buf[m++] = h_v(j,2) + dvz;
-        } else {
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
-        }
-        if (omega_flag) {
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
-        }
-        if (angmom_flag) {
-          buf[m++] = h_angmom(j,0);
-          buf[m++] = h_angmom(j,1);
-          buf[m++] = h_angmom(j,2);
-        }
-        if (comm_images) {
-          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
-          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
-          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
-          imageint img = (xi & IMGMASK) |
-            ((yi & IMGMASK) << IMGBITS) |
-            ((zi & IMGMASK) << IMG2BITS);
-          buf[m++] = ubuf(img).d;
-        }
-      }
-    }
+    constexpr auto comm_mask = X_MASK|V_MASK;
+    if (comm_images == 0) atomKK->sync(Host,comm_mask);
+    else atomKK->sync(Host,comm_mask|IMAGE_MASK);
+    AvecKokkos_pack_comm_vel<comm_mask>(this,m,n,list,buf,pbc_flag,pbc);
   }
 
   // pack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->pack_comm_hybrid(n,list,&buf[m]);
 
   return m;
@@ -507,32 +368,16 @@ int AtomVecHybridKokkos::pack_comm_vel(int n, int *list, double *buf,
 
 void AtomVecHybridKokkos::unpack_comm(int n, int first, double *buf)
 {
-  int i,k,m,last;
-
-  m = 0;
-  last = first + n;
-  if (comm_images == 0) {
-    for (i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-    }
-  } else {
-    for (i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-      h_image(i) = (imageint) ubuf(buf[m++]).i;
-    }
-  }
-
-  auto mod_mask = X_MASK;
-  if (comm_images) mod_mask |= IMAGE_MASK;
-  atomKK->modified(Host,mod_mask);
+  int m = 0;
+  int last = first + n;
+  // NOTE: missing grow here?
+  AvecKokkos_unpack<X_MASK>(this,first,last,buf,m);
+  if (comm_images == 0) atomKK->modified(Host,X_MASK);
+  else atomKK->modified(Host,X_MASK|IMAGE_MASK);
 
   // unpack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->unpack_comm_hybrid(n,first,&buf[m]);
 }
 
@@ -540,41 +385,36 @@ void AtomVecHybridKokkos::unpack_comm(int n, int first, double *buf)
 
 void AtomVecHybridKokkos::unpack_comm_vel(int n, int first, double *buf)
 {
-  int i,k,m,last;
   int omega_flag = atom->omega_flag;
   int angmom_flag = atom->angmom_flag;
 
-  m = 0;
-  last = first + n;
-  for (i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_v(i,0) = buf[m++];
-    h_v(i,1) = buf[m++];
-    h_v(i,2) = buf[m++];
-    if (omega_flag) {
-      h_omega(i,0) = buf[m++];
-      h_omega(i,1) = buf[m++];
-      h_omega(i,2) = buf[m++];
-    }
-    if (angmom_flag) {
-      h_angmom(i,0) = buf[m++];
-      h_angmom(i,1) = buf[m++];
-      h_angmom(i,2) = buf[m++];
-    }
-    if (comm_images) {
-      h_image(i) = (imageint) ubuf(buf[m++]).i;
-    }
+  int m = 0;
+  int last = first + n;
+  if (omega_flag && angmom_flag) {
+    constexpr auto mod_mask = X_MASK|V_MASK|OMEGA_MASK|ANGMOM_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
+  } else if (omega_flag) {
+    constexpr auto mod_mask = X_MASK|V_MASK|OMEGA_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
+  } else if (angmom_flag) {
+    constexpr auto mod_mask = X_MASK|V_MASK|ANGMOM_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
+  } else {
+    constexpr auto mod_mask = X_MASK|V_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
   }
-
-  auto mod_mask = X_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) mod_mask |= IMAGE_MASK;
-  atomKK->modified(Host,mod_mask);
 
   // unpack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->unpack_comm_hybrid(n,first,&buf[m]);
 }
 
@@ -629,80 +469,16 @@ void AtomVecHybridKokkos::unpack_reverse(int n, int *list, double *buf)
 int AtomVecHybridKokkos::pack_border(int n, int *list, double *buf,
                                int pbc_flag, int *pbc)
 {
-  auto sync_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
-  if (comm_images) sync_mask |= IMAGE_MASK;
-  atomKK->sync(Host,sync_mask);
+  constexpr auto border_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
+  if (comm_images == 0) atomKK->sync(Host,border_mask);
+  else atomKK->sync(Host,border_mask|IMAGE_MASK);
 
-  int i,j,k,m;
-  double dx,dy,dz;
-
-  m = 0;
-  if (pbc_flag == 0) {
-    if (comm_images == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-        buf[m++] = ubuf(h_tag[j]).d;
-        buf[m++] = ubuf(h_type[j]).d;
-        buf[m++] = ubuf(h_mask[j]).d;
-      }
-    } else {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0);
-        buf[m++] = h_x(j,1);
-        buf[m++] = h_x(j,2);
-        buf[m++] = ubuf(h_tag[j]).d;
-        buf[m++] = ubuf(h_type[j]).d;
-        buf[m++] = ubuf(h_mask[j]).d;
-        buf[m++] = ubuf(h_image[j]).d;
-      }
-    }
-  } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0];
-      dy = pbc[1];
-      dz = pbc[2];
-    }
-    if (comm_images == 0) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = ubuf(h_tag[j]).d;
-        buf[m++] = ubuf(h_type[j]).d;
-        buf[m++] = ubuf(h_mask[j]).d;
-      }
-    } else {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = ubuf(h_tag[j]).d;
-        buf[m++] = ubuf(h_type[j]).d;
-        buf[m++] = ubuf(h_mask[j]).d;
-        imageint xi = (h_image(j) & IMGMASK) - pbc[0];
-        imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
-        imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
-        imageint img = (xi & IMGMASK) |
-          ((yi & IMGMASK) << IMGBITS) |
-          ((zi & IMGMASK) << IMG2BITS);
-        buf[m++] = ubuf(img).d;
-      }
-    }
-  }
+  int m = 0;
+  AvecKokkos_pack_border<border_mask>(this,m,n,list,buf,pbc_flag,pbc);
 
   // pack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->pack_border_hybrid(n,list,&buf[m]);
 
   if (atom->nextra_border)
@@ -717,130 +493,35 @@ int AtomVecHybridKokkos::pack_border(int n, int *list, double *buf,
 int AtomVecHybridKokkos::pack_border_vel(int n, int *list, double *buf,
                                    int pbc_flag, int *pbc)
 {
-  auto sync_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) sync_mask |= IMAGE_MASK;
-  atomKK->sync(Host,sync_mask);
-  int i,j,k,m;
-  double dx,dy,dz,dvx,dvy,dvz;
   int omega_flag = atom->omega_flag;
   int angmom_flag = atom->angmom_flag;
 
-  m = 0;
-  if (pbc_flag == 0) {
-    for (i = 0; i < n; i++) {
-      j = list[i];
-      buf[m++] = h_x(j,0);
-      buf[m++] = h_x(j,1);
-      buf[m++] = h_x(j,2);
-      buf[m++] = ubuf(h_tag[j]).d;
-      buf[m++] = ubuf(h_type[j]).d;
-      buf[m++] = ubuf(h_mask[j]).d;
-      buf[m++] = h_v(j,0);
-      buf[m++] = h_v(j,1);
-      buf[m++] = h_v(j,2);
-      if (omega_flag) {
-        buf[m++] = h_omega(j,0);
-        buf[m++] = h_omega(j,1);
-        buf[m++] = h_omega(j,2);
-      }
-      if (angmom_flag) {
-        buf[m++] = h_angmom(j,0);
-        buf[m++] = h_angmom(j,1);
-        buf[m++] = h_angmom(j,2);
-      }
-      if (comm_images) {
-        buf[m++] = ubuf(h_image[j]).d;
-      }
-    }
+  int m = 0;
+  if (omega_flag && angmom_flag) {
+    constexpr auto border_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK|ANGMOM_MASK;
+    if (comm_images) atomKK->sync(Host,border_mask);
+    else atomKK->sync(Host,border_mask|IMAGE_MASK);
+    AvecKokkos_pack_border_vel<border_mask>(this,m,n,list,buf,pbc_flag,pbc);
+  } else if (omega_flag) {
+    constexpr auto border_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK;
+    if (comm_images) atomKK->sync(Host,border_mask);
+    else atomKK->sync(Host,border_mask|IMAGE_MASK);
+    AvecKokkos_pack_border_vel<border_mask>(this,m,n,list,buf,pbc_flag,pbc);
+  } else if (angmom_flag) {
+    constexpr auto border_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|ANGMOM_MASK;
+    if (comm_images) atomKK->sync(Host,border_mask);
+    else atomKK->sync(Host,border_mask|IMAGE_MASK);
+    AvecKokkos_pack_border_vel<border_mask>(this,m,n,list,buf,pbc_flag,pbc);
   } else {
-    if (domain->triclinic == 0) {
-      dx = pbc[0]*domain->xprd;
-      dy = pbc[1]*domain->yprd;
-      dz = pbc[2]*domain->zprd;
-    } else {
-      dx = pbc[0];
-      dy = pbc[1];
-      dz = pbc[2];
-    }
-    if (!deform_vremap) {
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = ubuf(h_tag[j]).d;
-        buf[m++] = ubuf(h_type[j]).d;
-        buf[m++] = ubuf(h_mask[j]).d;
-        buf[m++] = h_v(j,0);
-        buf[m++] = h_v(j,1);
-        buf[m++] = h_v(j,2);
-        if (omega_flag) {
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
-        }
-        if (angmom_flag) {
-          buf[m++] = h_angmom(j,0);
-          buf[m++] = h_angmom(j,1);
-          buf[m++] = h_angmom(j,2);
-        }
-        if (comm_images) {
-          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
-          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
-          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
-          imageint img = (xi & IMGMASK) |
-            ((yi & IMGMASK) << IMGBITS) |
-            ((zi & IMGMASK) << IMG2BITS);
-          buf[m++] = ubuf(img).d;
-        }
-      }
-    } else {
-      dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
-      dvy = pbc[1]*h_rate[1] + pbc[3]*h_rate[3];
-      dvz = pbc[2]*h_rate[2];
-      for (i = 0; i < n; i++) {
-        j = list[i];
-        buf[m++] = h_x(j,0) + dx;
-        buf[m++] = h_x(j,1) + dy;
-        buf[m++] = h_x(j,2) + dz;
-        buf[m++] = ubuf(h_tag[j]).d;
-        buf[m++] = ubuf(h_type[j]).d;
-        buf[m++] = ubuf(h_mask[j]).d;
-        if (h_mask[i] & deform_groupbit) {
-          buf[m++] = h_v(j,0) + dvx;
-          buf[m++] = h_v(j,1) + dvy;
-          buf[m++] = h_v(j,2) + dvz;
-        } else {
-          buf[m++] = h_v(j,0);
-          buf[m++] = h_v(j,1);
-          buf[m++] = h_v(j,2);
-        }
-        if (omega_flag) {
-          buf[m++] = h_omega(j,0);
-          buf[m++] = h_omega(j,1);
-          buf[m++] = h_omega(j,2);
-        }
-        if (angmom_flag) {
-          buf[m++] = h_angmom(j,0);
-          buf[m++] = h_angmom(j,1);
-          buf[m++] = h_angmom(j,2);
-        }
-        if (comm_images) {
-          imageint xi = (h_image(j) & IMGMASK) - pbc[0];
-          imageint yi = ((h_image(j) >> IMGBITS) & IMGMASK) - pbc[1];
-          imageint zi = (h_image(j) >> IMG2BITS) - pbc[2];
-          imageint img = (xi & IMGMASK) |
-            ((yi & IMGMASK) << IMGBITS) |
-            ((zi & IMGMASK) << IMG2BITS);
-          buf[m++] = ubuf(img).d;
-        }
-      }
-    }
+    constexpr auto border_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK;
+    if (comm_images) atomKK->sync(Host,border_mask);
+    else atomKK->sync(Host,border_mask|IMAGE_MASK);
+    AvecKokkos_pack_border_vel<border_mask>(this,m,n,list,buf,pbc_flag,pbc);
   }
 
   // pack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->pack_border_hybrid(n,list,&buf[m]);
 
   if (atom->nextra_border)
@@ -854,40 +535,18 @@ int AtomVecHybridKokkos::pack_border_vel(int n, int *list, double *buf,
 
 void AtomVecHybridKokkos::unpack_border(int n, int first, double *buf)
 {
-  int i,k,m,last;
-
-  m = 0;
-  last = first + n;
+  constexpr auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
+  int m = 0;
+  int last = first + n;
   while (last > nmax) grow(0);
 
-  if (comm_images == 0) {
-    for (i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-      h_tag[i] = (tagint) ubuf(buf[m++]).i;
-      h_type[i] = (int) ubuf(buf[m++]).i;
-      h_mask[i] = (int) ubuf(buf[m++]).i;
-    }
-  } else {
-    for (i = first; i < last; i++) {
-      h_x(i,0) = buf[m++];
-      h_x(i,1) = buf[m++];
-      h_x(i,2) = buf[m++];
-      h_tag[i] = (tagint) ubuf(buf[m++]).i;
-      h_type[i] = (int) ubuf(buf[m++]).i;
-      h_mask[i] = (int) ubuf(buf[m++]).i;
-      h_image[i] = (imageint) ubuf(buf[m++]).i;
-    }
-  }
-
-  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK;
-  if (comm_images) mod_mask |= IMAGE_MASK;
-  atomKK->modified(Host,mod_mask);
+  AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+  if (comm_images == 0) atomKK->modified(Host,mod_mask);
+  else atomKK->modified(Host,mod_mask|IMAGE_MASK);
 
   // unpack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->unpack_border_hybrid(n,first,&buf[m]);
 
   if (atom->nextra_border)
@@ -900,46 +559,38 @@ void AtomVecHybridKokkos::unpack_border(int n, int first, double *buf)
 
 void AtomVecHybridKokkos::unpack_border_vel(int n, int first, double *buf)
 {
-  int i,k,m,last;
   int omega_flag = atom->omega_flag;
   int angmom_flag = atom->angmom_flag;
 
-  m = 0;
-  last = first + n;
+  int m = 0;
+  int last = first + n;
   while (last > nmax) grow(0);
 
-  for (i = first; i < last; i++) {
-    h_x(i,0) = buf[m++];
-    h_x(i,1) = buf[m++];
-    h_x(i,2) = buf[m++];
-    h_tag[i] = (tagint) ubuf(buf[m++]).i;
-    h_type[i] = (int) ubuf(buf[m++]).i;
-    h_mask[i] = (int) ubuf(buf[m++]).i;
-    h_v(i,0) = buf[m++];
-    h_v(i,1) = buf[m++];
-    h_v(i,2) = buf[m++];
-    if (omega_flag) {
-      h_omega(i,0) = buf[m++];
-      h_omega(i,1) = buf[m++];
-      h_omega(i,2) = buf[m++];
-    }
-    if (angmom_flag) {
-      h_angmom(i,0) = buf[m++];
-      h_angmom(i,1) = buf[m++];
-      h_angmom(i,2) = buf[m++];
-    }
-    if (comm_images) {
-      h_image[i] = (imageint) ubuf(buf[m++]).i;
-    }
+  if (omega_flag && angmom_flag) {
+    constexpr auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK|ANGMOM_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
+  } else if (omega_flag) {
+    constexpr auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
+  } else if (angmom_flag) {
+    constexpr auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|ANGMOM_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
+  } else {
+    constexpr auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK;
+    AvecKokkos_unpack<mod_mask>(this,first,last,buf,m);
+    if (comm_images == 0) atomKK->modified(Host,mod_mask);
+    else atomKK->modified(Host,mod_mask|IMAGE_MASK);
   }
-
-  auto mod_mask = X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|V_MASK|OMEGA_MASK/*|ANGMOM_MASK*/;
-  if (comm_images) mod_mask |= IMAGE_MASK;
-  atomKK->modified(Host,mod_mask);
 
   // unpack sub-style contributions as contiguous chunks
 
-  for (k = 0; k < nstyles; k++)
+  for (int k = 0; k < nstyles; k++)
     m += styles[k]->unpack_border_hybrid(n,first,&buf[m]);
 
   if (atom->nextra_border)

@@ -113,6 +113,8 @@ class AtomVecDPDKokkos : public AtomVecKokkos {
   DAT::t_f_array d_f;
 
   DAT::tdual_int_1d k_count;
+
+  friend struct AvecKokkosTypes;
 };
 
 }

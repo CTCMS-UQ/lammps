@@ -128,6 +128,8 @@ class AtomVecHybridKokkos : public AtomVecKokkos {
 
   void build_styles();
   int known_style(char *);
+
+  friend struct AvecKokkosTypes;
 };
 
 }

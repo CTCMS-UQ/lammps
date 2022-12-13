@@ -111,6 +111,8 @@ class AtomVecSpinKokkos : public AtomVecKokkos {
   HAT::t_fm_long_array h_fm_long;
 
   DAT::tdual_int_1d k_count;
+
+  friend struct AvecKokkosTypes;
 };
 
 }

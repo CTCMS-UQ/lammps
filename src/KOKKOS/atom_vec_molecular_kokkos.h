@@ -169,6 +169,7 @@ class AtomVecMolecularKokkos : public AtomVecKokkos {
 
   HAT::tdual_int_1d k_count;
 
+  friend struct AvecKokkosTypes;
 };
 
 }
