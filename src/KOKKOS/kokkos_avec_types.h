@@ -7,65 +7,96 @@
 
 namespace LAMMPS_NS {
 
-// Macro to generate maybe type for each atom vec type
-// Store ref to host view instead of copy to avoid reference counting overhead
-#define GenerateAvecMaybe(view_name,MY_MASK,extra_cond) \
-template<class Avec, unsigned long MASK, class T, \
-  unsigned int DIM2=0, bool _enabled = ((MASK & MY_MASK) > 0) && extra_cond> \
-struct Maybe_ ## view_name; \
-\
-template<class Avec, unsigned long MASK, class T> \
-struct Maybe_ ## view_name<Avec,MASK,T,0,true> { \
-  static_assert((MASK&MY_MASK)>0 && extra_cond, "Maybe_" #view_name " should not explicitly specify the _enabled parameter"); \
-  typedef typename T::value_type value_type; \
-  T& _view; \
-  Maybe_ ## view_name(Avec* avec) : _view(avec->view_name) {} \
-  inline void pack(double *buf, int &m, const int j) { \
-    buf[m++] = ubuf(_view(j)).d; \
-  } \
-  \
-  inline void unpack(const int i, const double *buf, int &m) { \
-    if (std::is_integral<value_type>::value) _view(i) = (value_type) ubuf(buf[m++]).i; \
-    else _view(i) = buf[m++]; \
-  } \
-  \
-}; \
-\
-template<class Avec, unsigned long MASK, class T, unsigned int DIM2> \
-struct Maybe_ ## view_name<Avec,MASK,T,DIM2,true> { \
-  static_assert((MASK&MY_MASK)>0 && (DIM2>0) && extra_cond, "Maybe_" #view_name " should not explicitly specify the _enabled parameter"); \
-  typedef typename T::value_type value_type; \
-  T& _view; \
-  Maybe_ ## view_name(Avec* avec) : _view(avec->view_name) {} \
-  inline void pack(double *buf, int &m, const int j) { \
-    for (unsigned int d = 0; d < DIM2; ++d) \
-      buf[m++] = ubuf(_view(j,d)).d; \
-  } \
-  \
-  inline void unpack(const int i, const double *buf, int &m) { \
-    if (std::is_integral<value_type>::value) { \
-      for (unsigned int d = 0; d < DIM2; ++d) \
-        _view(i,d) = (value_type) ubuf(buf[m++]).i; \
-    } else { \
-      for (unsigned int d = 0; d < DIM2; ++d) \
-        _view(i,d) = buf[m++]; \
-    } \
-  } \
-}; \
-\
-template<class Avec, unsigned long MASK, class T, unsigned int DIM2> \
-struct Maybe_ ## view_name<Avec,MASK,T,DIM2,false> { \
-  static_assert(!((MASK&MY_MASK)>0 && extra_cond), "Maybe_" #view_name " should not explicitly specify the _enabled parameter"); \
-  Maybe_ ## view_name(Avec*) {} \
-  inline void pack(double *buf, int &m, const int j) {} \
-  inline void unpack(const int i, const double *buf, int &m) {} \
+/* --------------------------------------------------------------------------
+   Macro to generate maybe type for comm of each atom vec type.
+   Empty for unneeded atom vecs based on MASK.
+   Store ref to host view instead of copy to avoid reference counting overhead.
+ --------------------------------------------------------------------------- */
+#define GenerateAvecMaybe(view_name,MY_MASK,extra_cond)                       \
+template<class Avec, unsigned long MASK, class T,                             \
+  unsigned int DIM2=0, bool _enabled = ((MASK & MY_MASK) > 0) && extra_cond>  \
+struct Maybe_ ## view_name;                                                   \
+                                                                              \
+template<class Avec, unsigned long MASK, class T>                             \
+struct Maybe_ ## view_name<Avec,MASK,T,0,true> {                              \
+  static_assert((MASK&MY_MASK)>0 && extra_cond, "Maybe_" #view_name           \
+      " should not explicitly specify the _enabled parameter");               \
+  typedef typename T::value_type value_type;                                  \
+  T& _view;                                                                   \
+  Maybe_ ## view_name(Avec* avec) : _view(avec->view_name) {}                 \
+  inline void pack(double *buf, int &m, const int j) {                        \
+    buf[m++] = ubuf(_view(j)).d;                                              \
+  }                                                                           \
+                                                                              \
+  inline void unpack(const int i, const double *buf, int &m) {                \
+    if (std::is_integral<value_type>::value)                                  \
+      _view(i) = (value_type) ubuf(buf[m++]).i;                               \
+    else _view(i) = buf[m++];                                                 \
+  }                                                                           \
+                                                                              \
+};                                                                            \
+                                                                              \
+template<class Avec, unsigned long MASK, class T, unsigned int DIM2>          \
+struct Maybe_ ## view_name<Avec,MASK,T,DIM2,true> {                           \
+  static_assert((MASK&MY_MASK)>0 && (DIM2>0) && extra_cond, "Maybe_"          \
+    #view_name " should not explicitly specify the _enabled parameter");      \
+  typedef typename T::value_type value_type;                                  \
+  T& _view;                                                                   \
+  Maybe_ ## view_name(Avec* avec) : _view(avec->view_name) {}                 \
+  inline void pack(double *buf, int &m, const int j) {                        \
+    for (unsigned int d = 0; d < DIM2; ++d)                                   \
+      buf[m++] = ubuf(_view(j,d)).d;                                          \
+  }                                                                           \
+                                                                              \
+  inline void unpack(const int i, const double *buf, int &m) {                \
+    if (std::is_integral<value_type>::value) {                                \
+      for (unsigned int d = 0; d < DIM2; ++d)                                 \
+        _view(i,d) = (value_type) ubuf(buf[m++]).i;                           \
+    } else {                                                                  \
+      for (unsigned int d = 0; d < DIM2; ++d)                                 \
+        _view(i,d) = buf[m++];                                                \
+    }                                                                         \
+  }                                                                           \
+};                                                                            \
+                                                                              \
+template<class Avec, unsigned long MASK, class T, unsigned int DIM2>          \
+struct Maybe_ ## view_name<Avec,MASK,T,DIM2,false> {                          \
+  static_assert(!((MASK&MY_MASK)>0 && extra_cond), "Maybe_" #view_name        \
+      " should not explicitly specify the _enabled parameter");               \
+  Maybe_ ## view_name(Avec*) {}                                               \
+  inline void pack(double *buf, int &m, const int j) {}                       \
+  inline void unpack(const int i, const double *buf, int &m) {}               \
 };
 
-/* ---------------------------------------------------------------------- */
-
-// Maybe types wrapped in struct for simple friend declaration in atom vec styles
+/* --------------------------------------------------------------------------
+   Maybe types wrapped in struct for simple friend declaration in KOKKOS
+   atom vec styles
+ -------------------------------------------------------------------------- */
 struct AvecKokkosTypes {
-  // Specialise for x
+/* --------------------------------------------------------------------------
+   Generate maybe types. Only handling comm and border for now.
+   Some masks alias, so use atom vec class type as extra filter.
+ -------------------------------------------------------------------------- */
+  GenerateAvecMaybe(h_tag,      TAG_MASK,     true);  // full, atomic, charge, bond, spin, angle, sphere
+  GenerateAvecMaybe(h_type,     TYPE_MASK,    true);  // full, atomic, charge, bond, spin, angle, sphere
+  GenerateAvecMaybe(h_mask,     MASK_MASK,    true);  // full, atomic, charge, bond, spin, angle, sphere
+  GenerateAvecMaybe(h_q,        Q_MASK,       true);  // full, atomic, charge, bond
+  GenerateAvecMaybe(h_molecule, MOLECULE_MASK,true);  // full, bond, angle
+  GenerateAvecMaybe(h_sp,       SP_MASK,      (std::is_same<Avec,class AtomVecSpinKokkos>::value));   // spin
+  GenerateAvecMaybe(h_radius,   RADIUS_MASK,  (std::is_same<Avec,class AtomVecSphereKokkos>::value)); // sphere
+  GenerateAvecMaybe(h_rmass,    RMASS_MASK,   (std::is_same<Avec,class AtomVecSphereKokkos>::value)); // sphere
+  GenerateAvecMaybe(h_dpdTheta, DPDTHETA_MASK,(std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
+  GenerateAvecMaybe(h_uCond,    UCOND_MASK,   (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
+  GenerateAvecMaybe(h_uMech,    UMECH_MASK,   (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
+  GenerateAvecMaybe(h_uChem,    UCHEM_MASK,   (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
+  GenerateAvecMaybe(h_uCG,      UCG_MASK,     (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
+  GenerateAvecMaybe(h_uCGnew,   UCGNEW_MASK,  (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
+  GenerateAvecMaybe(h_omega,    OMEGA_MASK,   (std::is_same<Avec,class AtomVecHybridKokkos>::value)); // hybrid
+  GenerateAvecMaybe(h_angmom,   ANGMOM_MASK,  (std::is_same<Avec,class AtomVecHybridKokkos>::value)); // hybrid
+
+/* --------------------------------------------------------------------------
+   Specialise for x
+ -------------------------------------------------------------------------- */
   template<unsigned long MASK, bool _enabled = ((MASK & X_MASK) > 0)>
   struct Maybe_h_x;
 
@@ -105,8 +136,9 @@ struct AvecKokkosTypes {
     inline void unpack(const int i, const double *buf, int &m) {}
   };
 
-  /* ---------------------------------------------------------------------- */
-  // Specialise for v
+/* --------------------------------------------------------------------------
+   Specialise for v
+ -------------------------------------------------------------------------- */
   template<unsigned long MASK, bool _enabled = ((MASK & V_MASK) > 0)>
   struct Maybe_h_v;
 
@@ -147,8 +179,9 @@ struct AvecKokkosTypes {
     inline void unpack(const int i, const double *buf, int &m) {}
   };
 
-  /* ---------------------------------------------------------------------- */
-  // Specialise for image
+/* --------------------------------------------------------------------------
+   Specialise for image
+ -------------------------------------------------------------------------- */
   template<unsigned long MASK, bool _enabled = ((MASK & IMAGE_MASK) > 0)>
   struct Maybe_h_image;
 
@@ -189,31 +222,10 @@ struct AvecKokkosTypes {
     inline void unpack(const int i, const double *buf, int &m) {}
   };
 
-  /* ----------------------------------------------------------------------
-     Generate maybe types for each atom vec type.
-   ---------------------------------------------------------------------- */
-  // Only handling comm and border for now...
-  // Some masks alias, so use atom vec class type as extra filter.
-  GenerateAvecMaybe(h_tag,      TAG_MASK,     true);  // full, atomic, charge, bond, spin, angle, sphere
-  GenerateAvecMaybe(h_type,     TYPE_MASK,    true);  // full, atomic, charge, bond, spin, angle, sphere
-  GenerateAvecMaybe(h_mask,     MASK_MASK,    true);  // full, atomic, charge, bond, spin, angle, sphere
-  GenerateAvecMaybe(h_q,        Q_MASK,       true);  // full, atomic, charge, bond
-  GenerateAvecMaybe(h_molecule, MOLECULE_MASK,true);  // full, bond, angle
-  GenerateAvecMaybe(h_sp,       SP_MASK,      (std::is_same<Avec,class AtomVecSpinKokkos>::value));   // spin
-  GenerateAvecMaybe(h_radius,   RADIUS_MASK,  (std::is_same<Avec,class AtomVecSphereKokkos>::value)); // sphere
-  GenerateAvecMaybe(h_rmass,    RMASS_MASK,   (std::is_same<Avec,class AtomVecSphereKokkos>::value)); // sphere
-  GenerateAvecMaybe(h_dpdTheta, DPDTHETA_MASK,(std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
-  GenerateAvecMaybe(h_uCond,    UCOND_MASK,   (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
-  GenerateAvecMaybe(h_uMech,    UMECH_MASK,   (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
-  GenerateAvecMaybe(h_uChem,    UCHEM_MASK,   (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
-  GenerateAvecMaybe(h_uCG,      UCG_MASK,     (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
-  GenerateAvecMaybe(h_uCGnew,   UCGNEW_MASK,  (std::is_same<Avec,class AtomVecDPDKokkos>::value));    // dpd
-  GenerateAvecMaybe(h_omega,    OMEGA_MASK,   (std::is_same<Avec,class AtomVecHybridKokkos>::value)); // hybrid
-  GenerateAvecMaybe(h_angmom,   ANGMOM_MASK,  (std::is_same<Avec,class AtomVecHybridKokkos>::value)); // hybrid
-
-  /* ---------------------------------------------------------------------- */
-
-  // Classic comm including/excluding atom vectors as needed
+/* --------------------------------------------------------------------------
+   Handle classic comm/border with atom vecs included/excluded as needed
+   based on MASK.
+ -------------------------------------------------------------------------- */
   template<unsigned long MASK, class Avec>
   struct AtomVecKokkos_Classic {
     typedef ArrayTypes<LMPHostType> HAT;
@@ -245,6 +257,7 @@ struct AvecKokkosTypes {
       _rmass(avec), _dpdTheta(avec), _uCond(avec), _uMech(avec), _uChem(avec),
       _uCG(avec), _uCGnew(avec), _omega(avec), _angmom(avec), _avec(avec)
     {}
+
     inline void pack(double *buf, int &m, const int *list, const int n) {
       for (int i = 0; i < n; i++) {
         int j = list[i];
@@ -415,7 +428,6 @@ struct AvecKokkosTypes {
   {
     if (pbc_flag == 0 || !avec->deform_vremap)
       return AvecKokkos_pack_impl<MASK,Avec,BORDERFLAG>(avec,m,n,list,buf,pbc_flag,pbc);
-
     if (avec->comm_images == 0)
       AtomVecKokkos_Classic<MASK,Avec>(avec).template pack_deform<BORDERFLAG>(buf,m,list,n,pbc);
     else
@@ -424,6 +436,9 @@ struct AvecKokkosTypes {
 
 };
 
+/* --------------------------------------------------------------------------
+   Interface wrapper functions
+ -------------------------------------------------------------------------- */
 template<unsigned long MASK, class Avec>
 inline void AvecKokkos_pack_border(Avec* avec, int& m, const int n,
     const int* list, double* buf, const int pbc_flag, const int* pbc)
