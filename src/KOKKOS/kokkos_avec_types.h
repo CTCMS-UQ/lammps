@@ -1,3 +1,16 @@
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
 #ifndef KOKKOS_AVEC_TYPES_H
 #define KOKKOS_AVEC_TYPES_H
 
@@ -102,6 +115,8 @@ struct AvecKokkosTypes {
 
   template<unsigned long MASK>
   struct Maybe_h_x<MASK,true> {
+    static_assert((MASK&X_MASK)>0, "Maybe_h_x"
+        " should not explicitly specify the _enabled parameter");
     ArrayTypes<LMPHostType>::t_x_array& _view;
     template<class Avec>
     Maybe_h_x(Avec* avec) : _view(avec->h_x) {}
@@ -129,6 +144,8 @@ struct AvecKokkosTypes {
 
   template<unsigned long MASK>
   struct Maybe_h_x<MASK,false> {
+    static_assert(!((MASK&X_MASK)>0), "Maybe_h_x"
+        " should not explicitly specify the _enabled parameter");
     template<class Avec> Maybe_h_x(Avec*) {}
     inline void pack(double *buf, int &m, const int j) {}
     inline void pack(double *buf, int &m, const int j,
@@ -144,6 +161,8 @@ struct AvecKokkosTypes {
 
   template<unsigned long MASK>
   struct Maybe_h_v<MASK,true> {
+    static_assert((MASK&V_MASK)>0, "Maybe_h_v"
+        " should not explicitly specify the _enabled parameter");
     ArrayTypes<LMPHostType>::t_v_array& _view;
     template<class Avec>
     Maybe_h_v(Avec* avec) : _view(avec->h_v) {}
@@ -171,6 +190,8 @@ struct AvecKokkosTypes {
 
   template<unsigned long MASK>
   struct Maybe_h_v<MASK,false> {
+    static_assert(!((MASK&V_MASK)>0), "Maybe_h_v"
+        " should not explicitly specify the _enabled parameter");
     template<class Avec>
     Maybe_h_v(Avec*) {}
     inline void pack(double *buf, int &m, const int j) {}
@@ -187,6 +208,8 @@ struct AvecKokkosTypes {
 
   template<unsigned long MASK>
   struct Maybe_h_image<MASK,true> {
+    static_assert((MASK&IMAGE_MASK)>0, "Maybe_h_image"
+        " should not explicitly specify the _enabled parameter");
     ArrayTypes<LMPHostType>::t_imageint_1d& _view;
     template<class Avec>
     Maybe_h_image(Avec* avec) : _view(avec->h_image) {}
@@ -214,6 +237,8 @@ struct AvecKokkosTypes {
 
   template<unsigned long MASK>
   struct Maybe_h_image<MASK,false> {
+    static_assert(!((MASK&IMAGE_MASK)>0), "Maybe_h_image"
+        " should not explicitly specify the _enabled parameter");
     template<class Avec>
     Maybe_h_image(Avec*) {}
     inline void pack(double *buf, int &m, const int j) {}
