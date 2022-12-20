@@ -87,12 +87,23 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
   displs = new int[comm->nprocs];
   recvcounts3 = new int[comm->nprocs];
   displs3 = new int[comm->nprocs];
+
+  if (!use_mpiallreduce) {
+    memory->create(molnum, atom->nmax, "FixPropertyMol:molnum");
+    memory->create(molmass_peratom, atom->nmax, "FixPropertyMol:molmass_peratom");
+    atom->add_callback(Atom::GROW);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixPropertyMol::~FixPropertyMol()
 {
+  if (!use_mpiallreduce) {
+    atom->delete_callback(id, Atom::GROW);
+    memory->destroy(molnum);
+    memory->destroy(molmass_peratom);
+  }
   for (auto &item : permolecule) mem_destroy(item);
   delete[] recvcounts;
   delete[] displs;
@@ -267,11 +278,13 @@ void FixPropertyMol::mass_compute()
   if (dynamic_mols) grow_permolecule();
   if (molmax == 0) return;
   double massone;
-  for (tagint m = 0; m < molmax; ++m) massproc[m] = 0.0;
 
+  tagint *mols = (use_mpiallreduce) ? atom->molecule : molnum;
+  const tagint mymolmax = (use_mpiallreduce) ? molmax : nmolnum;
+  for (tagint m = 0; m < mymolmax; ++m) massproc[m] = 0.0;
   for (int i = 0; i < atom->nlocal; ++i) {
     if (groupbit & atom->mask[i]) {
-      tagint m = atom->molecule[i] - 1;
+      tagint m = mols[i] - 1;
       if (m < 0) continue;
       if (atom->rmass)
         massone = atom->rmass[i];
@@ -285,23 +298,12 @@ void FixPropertyMol::mass_compute()
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
     std::fill_n(buffer.begin(), buffer_size, 0.);
-    for (int i = 0; i < send_size; ++i) { buffer[buffer_mylo + i] = massproc[local_mols[i]]; }
-    MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+    MPI_Allgatherv(massproc, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                    MPI_DOUBLE, world);
     for (auto const &lookup : comm_ghost_lookup) {
       massproc[lookup.second] += buffer[lookup.first];
     }
-    memset(mass, 0, molmax * sizeof(double));
-    //for (auto const &m : local_mols) mass[m] = massproc[m];
-    //for (auto const &lookup : comm_ghost_lookup) {
-    //  mass[lookup.first] = buffer[lookup.second];
-    //}
-    // ^^ this SHOULD work, but somehow this comm lags behind when it is used in
-    // ComputePressureMol::pair_setup_callback (though not ComputeTempMol::vcm_compute!)
-    // and it is too much work debugging for a mostly static and quite small comm
-    // so we use this instead:
-    for (auto const &m : owned_mols) mass[m] = massproc[m];
-    MPI_Allreduce(MPI_IN_PLACE, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
+    memcpy(mass, massproc, nmolnum * sizeof(double));
   }
 }
 
@@ -320,7 +322,8 @@ void FixPropertyMol::com_compute()
   if (molmax == 0) return;
 
   int nlocal = atom->nlocal;
-  tagint *molecule = atom->molecule;
+  tagint *mols = (use_mpiallreduce) ? atom->molecule : molnum;
+  const tagint mymolmax = (use_mpiallreduce) ? molmax : nmolnum;
 
   int *type = atom->type;
   double *amass = atom->mass;
@@ -329,7 +332,7 @@ void FixPropertyMol::com_compute()
   double **v = atom->v;
   double massone, unwrap[3];
 
-  for (int m = 0; m < molmax; ++m) {
+  for (int m = 0; m < mymolmax; ++m) {
     comproc[m][0] = 0.0;
     comproc[m][1] = 0.0;
     comproc[m][2] = 0.0;
@@ -337,12 +340,12 @@ void FixPropertyMol::com_compute()
 
   if (recalc_mass) {
     mass_step = update->ntimestep;
-    for (tagint m = 0; m < molmax; ++m) massproc[m] = 0.0;
+    for (tagint m = 0; m < mymolmax; ++m) massproc[m] = 0.0;
   }
 
   for (int i = 0; i < nlocal; ++i) {
     if (groupbit & atom->mask[i]) {
-      tagint m = molecule[i] - 1;
+      tagint m = mols[i] - 1;
       if (m < 0) continue;
       if (rmass)
         massone = rmass[i];
@@ -365,29 +368,16 @@ void FixPropertyMol::com_compute()
     MPI_Allreduce(&comproc[0][0], &com[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
   } else {
     if (dynamic_mols || dynamic_group) pre_neighbor();
-    memset(&com[0][0], 0, 3 * molmax * sizeof(double));
-    for (auto const &m : local_mols) {
-      com[m][0] = comproc[m][0];
-      com[m][1] = comproc[m][1];
-      com[m][2] = comproc[m][2];
-    }
-    std::fill_n(buffer.begin(), 3 * buffer_size, 0.);
-    int bb = 3 * buffer_mylo;
-    for (int i = 0; i < send_size; ++i) {
-      tagint m = local_mols[i];
-      buffer[bb++] = com[m][0];
-      buffer[bb++] = com[m][1];
-      buffer[bb++] = com[m][2];
-    }
-    MPI_Allgatherv(MPI_IN_PLACE, 3 * send_size, MPI_DOUBLE, &(buffer.front()), recvcounts3, displs3,
+    MPI_Allgatherv(&comproc[0][0], 3 * send_size, MPI_DOUBLE, &(buffer.front()), recvcounts3, displs3,
                    MPI_DOUBLE, world);
     for (auto const &lookup : comm_ghost_lookup) {
       tagint m = lookup.second;
-      bb = 3 * lookup.first;
-      com[m][0] += buffer[bb++];
-      com[m][1] += buffer[bb++];
-      com[m][2] += buffer[bb++];
+      int bb = 3 * lookup.first;
+      comproc[m][0] += buffer[bb++];
+      comproc[m][1] += buffer[bb++];
+      comproc[m][2] += buffer[bb++];
     }
+    memcpy(&com[0][0], &comproc[0][0], 3*mymolmax*sizeof(double));
   }
   if (recalc_mass) {
     if (use_mpiallreduce) {
@@ -395,27 +385,16 @@ void FixPropertyMol::com_compute()
     } else {
       if (dynamic_mols || dynamic_group) pre_neighbor();
       std::fill_n(buffer.begin(), buffer_size, 0.);
-      for (int i = 0; i < send_size; ++i) { buffer[buffer_mylo + i] = massproc[local_mols[i]]; }
-      MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
+      MPI_Allgatherv(massproc, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                      MPI_DOUBLE, world);
       for (auto const &lookup : comm_ghost_lookup) {
         massproc[lookup.second] += buffer[lookup.first];
       }
-      memset(mass, 0, molmax * sizeof(double));
-      //for (auto const &m : local_mols) mass[m] = massproc[m];
-      //for (auto const &lookup : comm_ghost_lookup) {
-      //  mass[lookup.first] = buffer[lookup.second];
-      //}
-      // ^^ this SHOULD work, but somehow this comm lags behind when it is used in
-      // ComputePressureMol::pair_setup_callback (though not ComputeTempMol::vcm_compute!)
-      // and it is too much work debugging for a mostly static and quite small comm
-      // so we use this instead:
-      for (auto const &m : owned_mols) mass[m] = massproc[m];
-      MPI_Allreduce(MPI_IN_PLACE, mass, molmax, MPI_DOUBLE, MPI_SUM, world);
+      memcpy(mass, massproc, mymolmax * sizeof(double));
     }
   }
 
-  for (int m = 0; m < molmax; ++m) {
+  for (int m = 0; m < mymolmax; ++m) {
     // Some molecule ids could be skipped (not assigned atoms)
     if (mass[m] > 0.0) {
       com[m][0] /= mass[m];
@@ -478,7 +457,11 @@ void FixPropertyMol::pre_neighbor()
   ghost_mols.clear();
   owned_mols.clear();
   unsent_mols.clear();
+  buffer_uset.clear();
+  ghost_uset.clear();
+  owned_uset.clear();
   comm_ghost_lookup.clear();
+  molnum_map.clear();
 
   int const nlocal = atom->nlocal;
   int const nghost = atom->nghost;
@@ -490,27 +473,26 @@ void FixPropertyMol::pre_neighbor()
     tagint m = molecule[i] - 1;
     if (m < 0) continue;
     if (atom->map(atom->tag[i]) < nlocal) continue;    // remove ghosts of locals
-    ghost_mols.insert(m);
+    ghost_uset.insert(m);
   }
 
   // gather global list of ghost_mols
-  build_displs((int) ghost_mols.size());
+  build_displs((int) ghost_uset.size());
   int bb = buffer_mylo;
-  for (auto const &m : ghost_mols) { buffer[bb++] = ubuf(m).d; }
+  for (auto const &m : ghost_uset) { buffer[bb++] = ubuf(m).d; }
   MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                  MPI_DOUBLE, world);
 
   buffer.erase(buffer.begin() + buffer_mylo, buffer.begin() + buffer_myhi);
-  std::unordered_set<tagint> buffer_mols;
-  for (auto const &db : buffer) buffer_mols.insert((tagint) ubuf(db).i);
+  for (auto const &db : buffer) buffer_uset.insert((tagint) ubuf(db).i);
 
   for (int i = 0; i < nlocal; ++i) {
     if (!(mask[i] & groupbit)) continue;
     tagint m = molecule[i] - 1;
     if (m < 0) continue;
-    auto ins = owned_mols.insert(m);
+    auto ins = owned_uset.insert(m);
     if (ins.second) {
-      if (buffer_mols.count(m)) {
+      if (buffer_uset.count(m)) {
         local_mols.push_back(m);
       } else {
         unsent_mols.push_back(m);
@@ -518,36 +500,53 @@ void FixPropertyMol::pre_neighbor()
     }
   }
 
-  // build comm_mols and comm_ghost_lookups
+  // get buffer, we will manipulate local_mols and ghost_mols after this
   build_displs((int) local_mols.size());
   bb = buffer_mylo;
   for (auto const &m : local_mols) { buffer[bb++] = ubuf(m).d; }
   MPI_Allgatherv(MPI_IN_PLACE, send_size, MPI_DOUBLE, &(buffer.front()), recvcounts, displs,
                  MPI_DOUBLE, world);
 
+  // build local molnum from local and ghost mols -- for now owned_uset is local_uset
+
+  for (auto const &m : ghost_uset)
+    if (!owned_uset.count(m)) { ghost_mols.push_back(m); }
+
+  local_mols.insert(local_mols.end(), std::make_move_iterator(unsent_mols.begin()),
+                    std::make_move_iterator(unsent_mols.end()));
+
+  molnum_map[0] = 0;
+  int molidx = 1;
+  for (auto const &m : local_mols) molnum_map[m + 1] = molidx++;
+  for (auto const &m : ghost_mols) molnum_map[m + 1] = molidx++;
+  nmolnum = molidx - 1;
+
   for (int i = 0; i < buffer_mylo; ++i) {
     tagint m = (tagint) ubuf(buffer[i]).i;
-    if (ghost_mols.count(m)) comm_ghost_lookup[i] = m;
+    if (ghost_uset.count(m)) comm_ghost_lookup[i] = molnum_map[m + 1] - 1;
     if (m % 2 == 0) {
-      if (owned_mols.count(m)) { owned_mols.erase(m); }
+      if (owned_uset.count(m)) { owned_uset.erase(m); }
     }
   }
 
   for (int i = buffer_myhi; i < buffer_size; ++i) {
     tagint m = (tagint) ubuf(buffer[i]).i;
-    if (ghost_mols.count(m)) comm_ghost_lookup[i] = m;
+    if (ghost_uset.count(m)) comm_ghost_lookup[i] = molnum_map[m + 1] - 1;
     if (m % 2 == 1) {
-      if (owned_mols.count(m)) { owned_mols.erase(m); }
+      if (owned_uset.count(m)) { owned_uset.erase(m); }
     }
   }
+
+  for (auto const &m : owned_uset) owned_mols.push_back(molnum_map[m + 1] - 1);
+
+  // build molnum array
+  for (int i = 0; i < nlocal + nghost; ++i) { molnum[i] = molnum_map[molecule[i]]; }
 
   for (int p = 0; p < comm->nprocs; p++) {
     recvcounts3[p] = recvcounts[p] * 3;
     displs3[p] = displs[p] * 3;
   }
   buffer.assign(3 * buffer_size, 0.);    // for comms of 3-vecs
-  local_mols.insert(local_mols.end(), std::make_move_iterator(unsent_mols.begin()),
-                    std::make_move_iterator(unsent_mols.end()));
 }
 
 /* ----------------------------------------------------------------------
@@ -606,6 +605,10 @@ void FixPropertyMol::mem_destroy(PerMolecule &item)
     mem_destroy_impl<bigint>(item);
 }
 
+/* ----------------------------------------------------------------------
+   molnum utility functions
+------------------------------------------------------------------------- */
+
 inline void FixPropertyMol::build_displs(int size)
 {
   send_size = size;
@@ -623,4 +626,34 @@ inline void FixPropertyMol::build_displs(int size)
   buffer_mylo = displs[comm->me];
   buffer_myhi = buffer_mylo + recvcounts[comm->me];
   buffer.resize(buffer_size);
+}
+
+void FixPropertyMol::grow_arrays(int nmax)
+{
+  memory->grow(molnum, nmax, "FixPropertyMol:molnum");
+  memory->grow(molmass_peratom, nmax, "FixPropertyMol:molmass_peratom");
+}
+
+void FixPropertyMol::copy_arrays(int i, int j, int delflag)
+{
+  molnum[j] = molnum[i];
+  molmass_peratom[j] = molmass_peratom[i];
+}
+
+void FixPropertyMol::set_arrays(int i)
+{
+  molnum[i] = 0;
+  molmass_peratom[i] = 0.;
+}
+
+int FixPropertyMol::pack_exchange(int i, double *buf)
+{
+  buf[0] = molmass_peratom[i];
+  return 1;
+}
+
+int FixPropertyMol::unpack_exchange(int nlocal, double *buf)
+{
+  molmass_peratom[nlocal] = buf[0];
+  return 1;
 }

@@ -260,8 +260,8 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
   double unwrap[3];
 
   // molid = 1 to molmax for included atoms, 0 for excluded atoms
-  tagint *molecule = atom->molecule;
-  tagint molmax = molprop->molmax;
+  tagint *molecule = (molprop->use_mpiallreduce) ? atom->molecule : molprop->molnum;
+  const tagint molmax = (molprop->use_mpiallreduce) ? molprop->molmax : molprop->nmolnum;
 
   // Update molecular masses if required
   // Also grows vcm and vcmall if needed
@@ -317,34 +317,20 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
     }
 
   // clang-format on
-  double ke_total = 0;
   if (molmax > 0) {
     if (molprop->use_mpiallreduce) {
       MPI_Allreduce(&vcm[0][0], &vcmall[0][0], 3 * molmax, MPI_DOUBLE, MPI_SUM, world);
     } else {
-      memset(&vcmall[0][0], 0, 3 * molmax * sizeof(double));
-      for (auto const &m : molprop->local_mols) {
-        vcmall[m][0] = vcm[m][0];
-        vcmall[m][1] = vcm[m][1];
-        vcmall[m][2] = vcm[m][2];
-      }
-      std::fill_n(molprop->buffer.begin(), 3 * molprop->buffer_size, 0.);
-      int bb = 3 * molprop->buffer_mylo;
-      for (int i = 0; i < molprop->send_size; ++i) {
-        tagint m = molprop->local_mols[i];
-        molprop->buffer[bb++] = vcmall[m][0];
-        molprop->buffer[bb++] = vcmall[m][1];
-        molprop->buffer[bb++] = vcmall[m][2];
-      }
-      MPI_Allgatherv(MPI_IN_PLACE, 3 * molprop->send_size, MPI_DOUBLE, &(molprop->buffer.front()),
+      MPI_Allgatherv(&vcm[0][0], 3 * molprop->send_size, MPI_DOUBLE, &(molprop->buffer.front()),
                      molprop->recvcounts3, molprop->displs3, MPI_DOUBLE, world);
       for (auto const &lookup : molprop->comm_ghost_lookup) {
         tagint m = lookup.second;
         int bb = 3 * lookup.first;
-        vcmall[m][0] += molprop->buffer[bb++];
-        vcmall[m][1] += molprop->buffer[bb++];
-        vcmall[m][2] += molprop->buffer[bb++];
+        vcm[m][0] += molprop->buffer[bb++];
+        vcm[m][1] += molprop->buffer[bb++];
+        vcm[m][2] += molprop->buffer[bb++];
       }
+      memcpy(&vcmall[0][0], &vcm[0][0], 3 * molmax * sizeof(double));
     }
   }
   // clang-format off

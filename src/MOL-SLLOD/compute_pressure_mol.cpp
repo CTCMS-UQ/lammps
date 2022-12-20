@@ -382,8 +382,9 @@ void ComputePressureMol::pair_setup_callback(int eflag, int vflag) {
     nmax = atom->nmax;
     memory->grow(com_peratom, nmax, 3, "pressure/mol:com_peratom");
   }
+  tagint * molecule = (molprop->use_mpiallreduce) ? atom->molecule : molprop->molnum;
   for (int i = 0; i < atom->nlocal + atom->nghost; ++i) {
-    tagint m = atom->molecule[i]-1;
+    tagint m = molecule[i]-1;
     if (m < 0) {
       com_peratom[i][0] = atom->x[i][0];
       com_peratom[i][1] = atom->x[i][1];

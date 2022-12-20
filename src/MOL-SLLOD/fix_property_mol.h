@@ -21,8 +21,8 @@ FixStyle(property/mol,FixPropertyMol);
 #define LMP_FIX_PROPERTY_MOL_H
 
 #include "fix.h"
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace LAMMPS_NS {
 
@@ -39,14 +39,23 @@ class FixPropertyMol : public Fix {
   void setup_pre_force_respa(int, int) override;
   double memory_usage() override;
   double compute_array(int, int) override;
+  int pack_exchange(int, double *) override;
+  int unpack_exchange(int, double *) override;
 
-  std::vector<tagint> local_mols, unsent_mols;
-  std::unordered_set<tagint> ghost_mols, owned_mols; // each mol is owned by exactly one proc
+  void grow_arrays(int) override;
+  void copy_arrays(int, int, int) override;
+  void set_arrays(int) override;
+  std::vector<tagint> local_mols, unsent_mols, ghost_mols, owned_mols;
+  std::unordered_set<tagint> buffer_uset, ghost_uset,
+      owned_uset;    // each mol is owned by exactly one proc
   std::vector<double> buffer;
-  int buffer_mylo, buffer_myhi, buffer_size, send_size;
-  std::unordered_map<int, tagint> comm_ghost_lookup, comm_local_lookup;
-  bool use_mpiallreduce; // tell computes distant mol properties are not known
+  int buffer_mylo, buffer_myhi, buffer_size, send_size, nmolnum;
+  std::unordered_map<tagint, int> molnum_map;    // molnum_map[molID] = local molnum
+  std::unordered_map<int, tagint> comm_ghost_lookup;
+  bool use_mpiallreduce;    // tell computes distant mol properties are not known
   int *recvcounts, *displs, *recvcounts3, *displs3;
+  tagint *molnum;             // locally indexed molecule numbers
+  double *molmass_peratom;    // locally indexed molecule mass
 
   struct PerMolecule {
     std::string name;    // Identifier

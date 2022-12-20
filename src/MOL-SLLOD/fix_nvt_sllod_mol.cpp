@@ -213,7 +213,7 @@ void FixNVTSllodMol::nh_v_temp() {
   temp_mol->vcm_compute();
   double **vcmall = temp_mol->vcmall;
 
-  tagint *molecule = atom->molecule;
+  tagint *molecule = (molprop->use_mpiallreduce) ? atom->molecule : molprop->molnum;
   int m;
 
 
@@ -285,7 +285,7 @@ void FixNVTSllodMol::nve_x()
 
   double *xcom, xcom_half[3], molcom[3];
   double **&com = molprop->com;
-  tagint *molecule = atom->molecule;
+  tagint *molecule = (molprop->use_mpiallreduce) ? atom->molecule : molprop->molnum;
   tagint m;
 
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
