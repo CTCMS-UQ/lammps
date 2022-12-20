@@ -329,21 +329,21 @@ void ComputeTempMol::vcm_compute(double *ke_singles)
         vcmall[m][2] = vcm[m][2];
       }
       std::fill_n(molprop->buffer.begin(), 3 * molprop->buffer_size, 0.);
-      for (auto const &lookup : molprop->comm_local_lookup) {
-        tagint m = lookup.first;
-        int idx = 3 * lookup.second;
-        molprop->buffer[idx++] = vcmall[m][0];
-        molprop->buffer[idx++] = vcmall[m][1];
-        molprop->buffer[idx++] = vcmall[m][2];
+      int bb = 3 * molprop->buffer_mylo;
+      for (int i = 0; i < molprop->send_size; ++i) {
+        tagint m = molprop->local_mols[i];
+        molprop->buffer[bb++] = vcmall[m][0];
+        molprop->buffer[bb++] = vcmall[m][1];
+        molprop->buffer[bb++] = vcmall[m][2];
       }
-      MPI_Allreduce(MPI_IN_PLACE, &(molprop->buffer.front()), 3 * molprop->buffer_size, MPI_DOUBLE,
-                    MPI_SUM, world);
+      MPI_Allgatherv(MPI_IN_PLACE, 3 * molprop->send_size, MPI_DOUBLE, &(molprop->buffer.front()),
+                     molprop->recvcounts3, molprop->displs3, MPI_DOUBLE, world);
       for (auto const &lookup : molprop->comm_ghost_lookup) {
-        tagint m = lookup.first;
-        int idx = 3 * lookup.second;
-        vcmall[m][0] = molprop->buffer[idx++];
-        vcmall[m][1] = molprop->buffer[idx++];
-        vcmall[m][2] = molprop->buffer[idx++];
+        tagint m = lookup.second;
+        int bb = 3 * lookup.first;
+        vcmall[m][0] += molprop->buffer[bb++];
+        vcmall[m][1] += molprop->buffer[bb++];
+        vcmall[m][2] += molprop->buffer[bb++];
       }
     }
   }
