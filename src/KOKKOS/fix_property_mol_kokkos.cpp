@@ -16,6 +16,7 @@
 #include "Kokkos_Core_fwd.hpp"
 #include "atom.h"
 #include "atom_kokkos.h"
+#include "atom_masks.h"
 #include "domain.h"
 #include "domain_kokkos.h"
 #include "error.h"
@@ -247,7 +248,7 @@ void FixPropertyMolKokkos<DeviceType>::count_molecules() {
 template<class DeviceType>
 void FixPropertyMolKokkos<DeviceType>::mass_compute() {
   
-  atomKK->sync(execution_space,datamask_read);
+  atomKK->sync(execution_space,RMASS_MASK);
 
   atom_type = atomKK->k_type.view<DeviceType>();
   atom_mask = atomKK->k_mask.view<DeviceType>();
@@ -326,7 +327,7 @@ void FixPropertyMolKokkos<DeviceType>::operator()(TagFixPropertyMol_mass_compute
 
 template<class DeviceType>
 void FixPropertyMolKokkos<DeviceType>::com_compute() {
-  atomKK->sync(execution_space,datamask_read);
+  atomKK->sync(execution_space, X_MASK);
   com_step = update->ntimestep;
   // Recalculate mass if number of molecules (max. mol id) changed, or if
   // group is dynamic
@@ -456,7 +457,7 @@ void FixPropertyMolKokkos<DeviceType>::operator()(TagFixPropertyMol_com_scale, c
 template<class DeviceType>
 void FixPropertyMolKokkos<DeviceType>::vcm_compute()
 {
-  atomKK->sync(execution_space,datamask_read);
+  atomKK->sync(execution_space, V_MASK);
   vcm_step = update->ntimestep;
   // Recalculate mass if number of molecules (max. mol id) changed, or if
   // group is dynamic
