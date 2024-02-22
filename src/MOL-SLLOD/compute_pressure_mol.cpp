@@ -51,6 +51,9 @@ ComputePressureMol::ComputePressureMol(LAMMPS *lmp, int narg, char **arg) :
   extvector = 0;
   pressflag = 1;
   timeflag = 1;
+  peflag = 1;    // we need Pair::ev_tally() to be run
+
+  did_setup = invoked_peratom = invoked_scalar = -1;
 
   id_molprop = utils::strdup(arg[3]);
   if (strcmp(arg[4],"NULL") == 0) id_temp = nullptr;
