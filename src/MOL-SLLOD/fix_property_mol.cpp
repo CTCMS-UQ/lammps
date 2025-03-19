@@ -39,6 +39,10 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
   mass_flag = 0;
   com_flag = 0;
 
+  nmax = 0;
+  molmax = 1;
+  nmolecule = 0;
+
   dynamic_group_allow = 1;
   dynamic_group = group->dynamic[igroup];
   dynamic_mols = 0;
@@ -58,10 +62,6 @@ FixPropertyMol::FixPropertyMol(LAMMPS *lmp, int narg, char **arg) :
       iarg++;
     } else error->all(FLERR, "Illegal fix property/mol command");
   }
-
-  nmax = 0;
-  molmax = 1;
-  nmolecule = 0;
 
   com_step = -1;
   mass_step = -1;
